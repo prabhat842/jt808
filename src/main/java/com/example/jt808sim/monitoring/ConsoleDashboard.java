@@ -46,8 +46,12 @@ public class ConsoleDashboard implements AutoCloseable {
                 Authenticated        : %d
                 Msg/sec outbound     : %d
                 Msg/sec inbound      : %d
+                Outbound failures    : %d
+                Skipped writes       : %d
                 Location reports/sec : %d
+                Location reports all : %d
                 Heartbeats/sec       : %d
+                Heartbeats all       : %d
                 Media sessions       : %d
                 Media outbound       : %d pkt/s, %.2f MB/s
                 Avg ack latency      : %d ms
@@ -66,8 +70,12 @@ public class ConsoleDashboard implements AutoCloseable {
                 metrics.authenticatedSessions().get(),
                 outbound - lastOutbound,
                 inbound - lastInbound,
+                metrics.outboundFailures().sum(),
+                metrics.skippedWrites().sum(),
                 locations - lastLocation,
+                locations,
                 heartbeats - lastHeartbeat,
+                heartbeats,
                 metrics.activeMediaSessions().get(),
                 mediaPackets - lastMediaPackets,
                 (mediaBytes - lastMediaBytes) / 1_048_576.0,

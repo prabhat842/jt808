@@ -176,29 +176,49 @@ public class TerminalSession {
 
     private void scheduleStreamingTasks() {
         cancelStreamingTasks();
-        heartbeatTask = channel.eventLoop().scheduleAtFixedRate(this::sendHeartbeat,
+        sendLocationSafely();
+        heartbeatTask = channel.eventLoop().scheduleAtFixedRate(this::sendHeartbeatSafely,
                 config.getFleet().getHeartbeatIntervalSeconds(),
                 config.getFleet().getHeartbeatIntervalSeconds(),
                 TimeUnit.SECONDS);
-        locationTask = channel.eventLoop().scheduleAtFixedRate(this::sendLocation,
-                0,
+        locationTask = channel.eventLoop().scheduleAtFixedRate(this::sendLocationSafely,
+                config.getFleet().getLocationIntervalSeconds(),
                 config.getFleet().getLocationIntervalSeconds(),
                 TimeUnit.SECONDS);
     }
 
+    private void sendHeartbeatSafely() {
+        try {
+            sendHeartbeat();
+        } catch (RuntimeException e) {
+            log.warn("terminal {} heartbeat task failed", identity.getTerminalId(), e);
+        }
+    }
+
+    private void sendLocationSafely() {
+        try {
+            sendLocation();
+        } catch (RuntimeException e) {
+            log.warn("terminal {} location task failed", identity.getTerminalId(), e);
+        }
+    }
+
     private void sendHeartbeat() {
-        write(new HeartbeatMessage(sequenceGenerator.next(), identity.getTerminalId()));
-        metrics.heartbeats().increment();
+        write(new HeartbeatMessage(sequenceGenerator.next(), identity.getTerminalId()), metrics.heartbeats()::increment);
     }
 
     private void sendLocation() {
         TrajectoryEngine.Snapshot snapshot = trajectoryEngine.snapshot(Instant.now());
-        write(new LocationReportMessage(sequenceGenerator.next(), identity.getTerminalId(), snapshot.coordinate(), snapshot.speedKph(), snapshot.heading(), Instant.now()));
-        metrics.locationReports().increment();
+        write(new LocationReportMessage(sequenceGenerator.next(), identity.getTerminalId(), snapshot.coordinate(), snapshot.speedKph(), snapshot.heading(), Instant.now()), metrics.locationReports()::increment);
     }
 
     private void write(OutboundJt808Message message) {
+        write(message, null);
+    }
+
+    private void write(OutboundJt808Message message, Runnable onSuccess) {
         if (channel == null || !channel.isActive()) {
+            metrics.skippedWrites().increment();
             return;
         }
         if (message.expectsServerAck()) {
@@ -215,6 +235,12 @@ public class TerminalSession {
         channel.writeAndFlush(message).addListener(future -> {
             if (future.isSuccess()) {
                 metrics.outboundMessages().increment();
+                if (onSuccess != null) {
+                    onSuccess.run();
+                }
+            } else {
+                metrics.outboundFailures().increment();
+                log.warn("terminal {} failed to write message 0x{}", identity.getTerminalId(), Integer.toHexString(message.messageId()), future.cause());
             }
         });
     }

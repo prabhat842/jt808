@@ -19,6 +19,8 @@ public class MetricsRegistry {
     private final AtomicLong authenticatedSessions = new AtomicLong();
     private final AtomicLong activeMediaSessions = new AtomicLong();
     private final LongAdder outboundMessages = new LongAdder();
+    private final LongAdder outboundFailures = new LongAdder();
+    private final LongAdder skippedWrites = new LongAdder();
     private final LongAdder inboundMessages = new LongAdder();
     private final LongAdder locationReports = new LongAdder();
     private final LongAdder heartbeats = new LongAdder();
@@ -53,6 +55,14 @@ public class MetricsRegistry {
 
     public LongAdder outboundMessages() {
         return outboundMessages;
+    }
+
+    public LongAdder outboundFailures() {
+        return outboundFailures;
+    }
+
+    public LongAdder skippedWrites() {
+        return skippedWrites;
     }
 
     public LongAdder inboundMessages() {

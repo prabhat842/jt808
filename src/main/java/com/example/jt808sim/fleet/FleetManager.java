@@ -71,11 +71,15 @@ public class FleetManager implements AutoCloseable {
         for (int i = 0; i < config.getFleet().getConnectionCount(); i++) {
             VehicleIdentity template = config.getVehicles().get(i % config.getVehicles().size());
             VehicleIdentity identity = template.copyForIndex(i);
-            if (i < config.getJt1078().getMediaCapableTerminalCount()) {
+            int mediaCapableCount = config.getJt1078().getMediaCapableTerminalCount();
+            identity.setMediaCapable(mediaCapableCount > 0 ? i < mediaCapableCount : template.isMediaCapable());
+            if (identity.isMediaCapable()) {
                 identity.setMediaCapable(true);
                 if (identity.getMediaChannels().isEmpty()) {
                     identity.setMediaChannels(List.of(1));
                 }
+            } else {
+                identity.setMediaChannels(List.of());
             }
             result.add(identity);
         }
