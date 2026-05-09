@@ -45,6 +45,30 @@ Expected result:
 target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar
 ```
 
+## 2.1 Protocol Unit Tests
+
+Run the protocol-focused unit tests:
+
+```bash
+mvn test
+```
+
+If the default Maven cache is not writable in the test environment, use a local cache:
+
+```bash
+mvn -Dmaven.repo.local=/tmp/m2-jt808 test
+```
+
+Covered protocol checks:
+
+- 20-digit terminal ID BCD encoding/decoding
+- XOR checksum calculation
+- outbound JT/T 808-2019 header serialization
+- outbound delimiter wrapping and escape handling
+- inbound `0x8001` server acknowledgment decoding
+- inbound `0x8100` registration response decoding
+- terminal registration body field sizing
+
 ## 3. Configuration
 
 Default config:
