@@ -108,6 +108,12 @@ The simulator prints a refreshing console dashboard with:
 - checksum failures
 - heap usage
 
+If a local sandbox or VM restricts Netty native epoll socket creation, force NIO for the test run:
+
+```bash
+java -Djt808.transport=nio -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar --config config/fleet.json
+```
+
 ## 5. Required Server Side
 
 The simulator is a client fleet. For full lifecycle testing, the test environment needs a JT808/JT1078-compatible server that can:
@@ -123,6 +129,20 @@ The simulator is a client fleet. For full lifecycle testing, the test environmen
 Without a compatible server, connection counters may rise briefly but authentication and streaming will not complete.
 
 ## 6. Smoke Test Script
+
+For a local positive-path smoke test without a real platform server, start the bundled mock platform in one terminal:
+
+```bash
+python3 scripts/mock_platform.py
+```
+
+Then run the simulator from another terminal:
+
+```bash
+java -Djt808.transport=nio -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar --config config/fleet.json
+```
+
+The mock platform responds to registration/authentication and accepts synthetic JT1078 media sockets. It is only for simulator smoke testing, not protocol certification.
 
 Create `tmp/smoke-config.json` from the default config with a small fleet:
 

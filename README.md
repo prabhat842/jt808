@@ -37,6 +37,12 @@ java \
 
 The console dashboard refreshes once per second with connection, authentication, telemetry, acknowledgment, checksum, and media counters.
 
+For constrained local environments where Netty native epoll cannot create sockets, force Java NIO:
+
+```bash
+java -Djt808.transport=nio -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar --config config/fleet.json
+```
+
 ## Configuration
 
 Edit [config/fleet.json](config/fleet.json).

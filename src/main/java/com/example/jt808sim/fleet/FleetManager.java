@@ -7,18 +7,14 @@ import com.example.jt808sim.netty.JT808ClientHandler;
 import com.example.jt808sim.netty.Jt808EscapeCodec;
 import com.example.jt808sim.netty.Jt808MessageDecoder;
 import com.example.jt808sim.netty.Jt808MessageEncoder;
+import com.example.jt808sim.netty.TransportSupport;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
-import io.netty.channel.epoll.Epoll;
-import io.netty.channel.epoll.EpollEventLoopGroup;
-import io.netty.channel.epoll.EpollSocketChannel;
-import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.DelimiterBasedFrameDecoder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,7 +41,7 @@ public class FleetManager implements AutoCloseable {
     public void start() {
         Bootstrap bootstrap = new Bootstrap()
                 .group(eventLoopGroup)
-                .channel(Epoll.isAvailable() ? EpollSocketChannel.class : NioSocketChannel.class)
+                .channel(TransportSupport.socketChannelClass())
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .option(ChannelOption.TCP_NODELAY, true);
 
@@ -88,10 +84,7 @@ public class FleetManager implements AutoCloseable {
 
     private static EventLoopGroup createEventLoopGroup() {
         int threads = Math.max(2, Runtime.getRuntime().availableProcessors());
-        if (Epoll.isAvailable()) {
-            return new EpollEventLoopGroup(threads);
-        }
-        return new NioEventLoopGroup(threads);
+        return TransportSupport.newEventLoopGroup(threads);
     }
 
     @Override
