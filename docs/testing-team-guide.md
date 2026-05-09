@@ -2,6 +2,8 @@
 
 This guide covers how to build, run, and test the JT808/JT1078 Fleet Simulator.
 
+For exact protocol coverage and known gaps, see [protocol-scope.md](protocol-scope.md).
+
 ## 1. Environment
 
 Use Ubuntu 22.04+ or a comparable Linux host.
@@ -68,6 +70,11 @@ Covered protocol checks:
 - inbound `0x8001` server acknowledgment decoding
 - inbound `0x8100` registration response decoding
 - terminal registration body field sizing
+- JT/T 1078 `0x9101` real-time request decoding
+- JT/T 1078 `0x9201` playback request decoding
+- JT/T 1078 Table 19 stream packet header layout
+
+Current JT/T 1078 media checks validate framing and synthetic stream transport. The payload is generated test data, not real H.264/AAC media.
 
 ## 3. Configuration
 
@@ -89,6 +96,8 @@ Important fields to vary during testing:
 - `jt1078.mediaCapableTerminalCount`
 - `jt1078.host`
 - `jt1078.port`
+- `jt1078.streamMode`: `synthetic` or `file`
+- `jt1078.mediaFiles`: MP4 fixture paths used when `streamMode` is `file`
 - `jt1078.videoPayloadBytesPerPacket`
 - `jt1078.videoPacketsPerSecond`
 
@@ -137,6 +146,20 @@ If a local sandbox or VM restricts Netty native epoll socket creation, force NIO
 ```bash
 java -Djt808.transport=nio -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar --config config/fleet.json
 ```
+
+## 4.1 Run Server And Simulator Separately
+
+Start the server in one terminal or on a separate machine:
+
+```bash
+java \
+  -Djt808.transport=nio \
+  -cp target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar \
+  com.example.jt808sim.server.ServerMain \
+  --config config/server.json
+```
+
+Then point `config/fleet.json` at the server host and run the simulator normally. See [server-side-guide.md](server-side-guide.md).
 
 ## 5. Required Server Side
 
@@ -270,6 +293,35 @@ Check media connections:
 ```bash
 ss -tan | grep ':1078' | wc -l
 ```
+
+## File-Backed Media Fixtures
+
+The simulator includes small `.mp4` byte fixtures under `sample-media/` and the default config uses:
+
+```json
+"streamMode": "file",
+"mediaFiles": [
+  "sample-media/city-loop.mp4",
+  "sample-media/road-loop.mp4"
+]
+```
+
+This mode streams bytes from the files into JT1078 packets. It is useful for repeatable load and transport tests. It is not a video decoder certification test.
+
+## Server Test Console
+
+When the standalone server is running, open:
+
+```text
+http://127.0.0.1:8888/ui
+```
+
+Use the console to:
+
+- verify online terminal list
+- send `0x9101` start-live commands
+- send `0x9102` stop-live commands
+- confirm terminal general responses in the recent command table
 
 Check Java process:
 

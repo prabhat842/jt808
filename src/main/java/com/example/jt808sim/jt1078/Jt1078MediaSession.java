@@ -23,7 +23,7 @@ public class Jt1078MediaSession {
     private final MetricsRegistry metrics;
     private final String terminalId;
     private final int channelId;
-    private final SyntheticMediaSource source = new SyntheticMediaSource();
+    private final MediaPayloadSource source;
     private final AtomicLong sequence = new AtomicLong();
     private Channel channel;
     private ScheduledFuture<?> sendTask;
@@ -34,6 +34,9 @@ public class Jt1078MediaSession {
         this.metrics = metrics;
         this.terminalId = terminalId;
         this.channelId = channelId;
+        this.source = "file".equalsIgnoreCase(config.streamMode())
+                ? new FileMediaSource(config.mediaFiles())
+                : new SyntheticMediaSource();
     }
 
     public void start() {

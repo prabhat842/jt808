@@ -15,7 +15,11 @@
     "mediaCapableTerminalCount": 2,
     "host": "127.0.0.1",
     "port": 1078,
-    "streamMode": "synthetic",
+    "streamMode": "file",
+    "mediaFiles": [
+      "sample-media/city-loop.mp4",
+      "sample-media/road-loop.mp4"
+    ],
     "videoPayloadBytesPerPacket": 950,
     "videoPacketsPerSecond": 25
   },

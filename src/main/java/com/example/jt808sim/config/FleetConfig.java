@@ -152,6 +152,7 @@ public class FleetConfig {
         private String host = "127.0.0.1";
         private int port = 1078;
         private String streamMode = "synthetic";
+        private List<String> mediaFiles = new ArrayList<>();
         private int videoPayloadBytesPerPacket = 950;
         private int videoPacketsPerSecond = 25;
 
@@ -185,6 +186,14 @@ public class FleetConfig {
 
         public void setStreamMode(String streamMode) {
             this.streamMode = streamMode;
+        }
+
+        public List<String> getMediaFiles() {
+            return mediaFiles;
+        }
+
+        public void setMediaFiles(List<String> mediaFiles) {
+            this.mediaFiles = mediaFiles == null ? new ArrayList<>() : mediaFiles;
         }
 
         public int getVideoPayloadBytesPerPacket() {
