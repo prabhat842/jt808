@@ -1,0 +1,37 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 7611
+  },
+  "fleet": {
+    "connectionCount": 10,
+    "connectStaggerMs": 20,
+    "locationIntervalSeconds": 5,
+    "heartbeatIntervalSeconds": 30,
+    "ackTimeoutSeconds": 15,
+    "routeMode": "REVERSE"
+  },
+  "jt1078": {
+    "mediaCapableTerminalCount": 2,
+    "host": "127.0.0.1",
+    "port": 1078,
+    "streamMode": "synthetic",
+    "videoPayloadBytesPerPacket": 950,
+    "videoPacketsPerSecond": 25
+  },
+  "vehicles": [
+    {
+      "vin": "VIN00000000000001",
+      "terminalId": "00000000000000000001",
+      "plateNumber": "TEST-0001",
+      "manufacturerId": "TEST1",
+      "startLat": 22.250000,
+      "startLon": 72.200000,
+      "targetLat": 22.350000,
+      "targetLon": 72.350000,
+      "speedKph": 45.0,
+      "mediaCapable": true,
+      "mediaChannels": [1]
+    }
+  ]
+}
