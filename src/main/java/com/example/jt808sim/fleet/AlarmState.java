@@ -33,9 +33,7 @@ public class AlarmState {
     /**
      * Handles a 0x8203 manual alarm confirm message from the platform.
      *
-     * Only bits whose {@link AlarmBit#clearOnAck} flag is true are cleared;
-     * bits that must stay active until the condition is relieved are left alone.
-     *
+     * Only bits whose {@link AlarmBit#clearOnAck} flag is true are cleared.
      * The alarmTypeMask bits (Table 36) map 1:1 to the alarm word bits.
      */
     public void confirmAlarms(long alarmTypeMask) {
@@ -43,6 +41,16 @@ public class AlarmState {
             if (alarm.clearOnAck && (alarmTypeMask & alarm.mask()) != 0) {
                 clear(alarm);
             }
+        }
+    }
+
+    /**
+     * Clears all ON_ACK alarm bits (those that clear when the platform ACKs a
+     * location report). Called when 0x8001 is received for a 0x0200 message.
+     */
+    public void clearOnAckBits() {
+        for (AlarmBit alarm : AlarmBit.VALUES) {
+            if (alarm.clearOnAck) clear(alarm);
         }
     }
 }

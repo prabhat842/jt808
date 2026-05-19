@@ -49,28 +49,34 @@ public class AlarmEngine {
     }
 
     /**
-     * Called once per location report tick.
-     *
-     * @param speedKph    current speed from the trajectory snapshot
-     * @param alarmState  mutable alarm state to be updated
-     * @param params      live terminal parameters (thresholds)
-     * @param now         wall-clock time of this evaluation
+     * Called once per location report tick using the global max speed from params.
      */
     public void evaluate(double speedKph, AlarmState alarmState, TerminalParams params, Instant now) {
+        evaluate(speedKph, params.maxSpeedKph(), alarmState, params, now);
+    }
+
+    /**
+     * Called once per location report tick with an explicit effective max speed.
+     * Use this overload when the terminal is inside an area with a speed limit
+     * that is lower than the global parameter.
+     *
+     * @param effectiveMaxSpeedKph the active speed limit at the current position
+     */
+    public void evaluate(double speedKph, long effectiveMaxSpeedKph, AlarmState alarmState,
+                         TerminalParams params, Instant now) {
         long intervalSeconds = lastEvalTime == null ? 0
                 : Math.max(0, now.getEpochSecond() - lastEvalTime.getEpochSecond());
         lastEvalTime = now;
 
-        evaluateOverspeed(speedKph, intervalSeconds, alarmState, params, now);
+        evaluateOverspeed(speedKph, intervalSeconds, effectiveMaxSpeedKph, alarmState, params, now);
         evaluateFatigue(speedKph, alarmState, params, now);
         evaluateParking(speedKph, alarmState, params, now);
     }
 
     // ── Overspeed (bits 1, 13, 18) ───────────────────────────────────────────
 
-    private void evaluateOverspeed(double speedKph, long intervalSeconds,
+    private void evaluateOverspeed(double speedKph, long intervalSeconds, long maxSpeed,
                                    AlarmState state, TerminalParams params, Instant now) {
-        long maxSpeed = params.maxSpeedKph();
 
         // Reset accumulated counter at midnight (CN time)
         LocalDate today = now.atZone(CN_ZONE).toLocalDate();

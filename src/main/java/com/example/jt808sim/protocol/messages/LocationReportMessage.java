@@ -1,6 +1,7 @@
 package com.example.jt808sim.protocol.messages;
 
 import com.example.jt808sim.fleet.VehicleState;
+import com.example.jt808sim.fleet.geofence.AreaAlarmInfo;
 import com.example.jt808sim.physics.Coordinate;
 import com.example.jt808sim.protocol.Jt808CodecSupport;
 import com.example.jt808sim.protocol.MessageIds;
@@ -96,6 +97,18 @@ public class LocationReportMessage extends AbstractJt808Message {
             out.writeByte(0x11);
             out.writeByte(1);    // length: 1 byte (type only; area ID absent when type==0)
             out.writeByte(0);    // location type 0 = no specific position
+        }
+
+        // 0x12  Area/route entry/exit alarm additional info (Table 29)
+        // Body: locationType(1) + areaOrRouteId(4) + direction(1) = 6 bytes
+        AreaAlarmInfo areaInfo = vs.areaAlarmInfo();
+        boolean areaAlarmActive = (alarmWord & (1L << 20)) != 0 || (alarmWord & (1L << 21)) != 0;
+        if (areaAlarmActive && areaInfo != null) {
+            out.writeByte(0x12);
+            out.writeByte(6);
+            out.writeByte(areaInfo.locationType());
+            out.writeInt((int) areaInfo.areaId());
+            out.writeByte(areaInfo.direction());
         }
     }
 }

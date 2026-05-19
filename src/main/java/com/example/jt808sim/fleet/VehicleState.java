@@ -1,5 +1,6 @@
 package com.example.jt808sim.fleet;
 
+import com.example.jt808sim.fleet.geofence.AreaAlarmInfo;
 import com.example.jt808sim.physics.Coordinate;
 
 /**
@@ -37,6 +38,9 @@ public class VehicleState {
     // Altitude in meters (Table 23, WORD); synthetic default for flat-land routes
     private volatile int altitudeMeters = 50;
 
+    // Area/route alarm info for 0x12 additional info (null when no area alarm active)
+    private volatile AreaAlarmInfo areaAlarmInfo;
+
     public long alarmWord() {
         return alarmWord;
     }
@@ -67,6 +71,14 @@ public class VehicleState {
 
     public int altitudeMeters() {
         return altitudeMeters;
+    }
+
+    public AreaAlarmInfo areaAlarmInfo() {
+        return areaAlarmInfo;
+    }
+
+    public void setAreaAlarmInfo(AreaAlarmInfo info) {
+        this.areaAlarmInfo = info;
     }
 
     /**

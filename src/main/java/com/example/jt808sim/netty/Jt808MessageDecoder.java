@@ -12,8 +12,21 @@ import com.example.jt808sim.protocol.ServerAck;
 import com.example.jt808sim.protocol.TerminalRegistration;
 import com.example.jt808sim.protocol.TerminalGeneralResponse;
 import com.example.jt808sim.protocol.TerminalLocationReport;
+import com.example.jt808sim.fleet.geofence.AreaAttribute;
+import com.example.jt808sim.fleet.geofence.CircleArea;
+import com.example.jt808sim.fleet.geofence.PolygonArea;
+import com.example.jt808sim.fleet.geofence.RectangleArea;
+import com.example.jt808sim.fleet.geofence.RouteArea;
+import com.example.jt808sim.fleet.geofence.TurningPoint;
+import com.example.jt808sim.physics.Coordinate;
+import com.example.jt808sim.protocol.inbound.DeleteArea;
+import com.example.jt808sim.protocol.inbound.DeleteRoute;
 import com.example.jt808sim.protocol.inbound.LocationQuery;
 import com.example.jt808sim.protocol.inbound.ManualAlarmConfirm;
+import com.example.jt808sim.protocol.inbound.SetCircleArea;
+import com.example.jt808sim.protocol.inbound.SetPolygonArea;
+import com.example.jt808sim.protocol.inbound.SetRectangleArea;
+import com.example.jt808sim.protocol.inbound.SetRoute;
 import com.example.jt808sim.protocol.inbound.TempLocationTracking;
 import com.example.jt808sim.protocol.inbound.TerminalAttributeQuery;
 import com.example.jt808sim.protocol.inbound.TerminalControl;
@@ -33,6 +46,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+@SuppressWarnings("DuplicatedCode")
 
 public class Jt808MessageDecoder extends ByteToMessageDecoder {
     private final MetricsRegistry metrics;
@@ -157,6 +172,27 @@ public class Jt808MessageDecoder extends ByteToMessageDecoder {
             body.readBytes(data);
             return new TerminalUpdate(upgradeType, mfgId, version, data);
         }
+        // ── Phase 3: geofence / vehicle management ────────────────────────────
+        if (messageId == MessageIds.SET_CIRCLE_AREA && body.isReadable()) {
+            return decodeSetCircleArea(body);
+        }
+        if ((messageId == MessageIds.DELETE_CIRCLE_AREA
+                || messageId == MessageIds.DELETE_RECTANGLE_AREA
+                || messageId == MessageIds.DELETE_POLYGON_AREA) && body.isReadable()) {
+            return decodeDeleteArea(body);
+        }
+        if (messageId == MessageIds.SET_RECTANGLE_AREA && body.isReadable()) {
+            return decodeSetRectangleArea(body);
+        }
+        if (messageId == MessageIds.SET_POLYGON_AREA && body.isReadable()) {
+            return decodeSetPolygonArea(body);
+        }
+        if (messageId == MessageIds.SET_ROUTE && body.isReadable()) {
+            return decodeSetRoute(body);
+        }
+        if (messageId == MessageIds.DELETE_ROUTE && body.isReadable()) {
+            return decodeDeleteRoute(body);
+        }
         // ── JT1078 signaling ──────────────────────────────────────────────────
         Object jt1078Command = Jt1078CommandDecoder.decode(messageId, body);
         if (jt1078Command != null) {
@@ -234,5 +270,190 @@ public class Jt808MessageDecoder extends ByteToMessageDecoder {
         String value = body.toString(body.readerIndex(), readable, java.nio.charset.StandardCharsets.US_ASCII).trim();
         body.skipBytes(readable);
         return value;
+    }
+
+    // ── Geofence message decoders ─────────────────────────────────────────────
+
+    private static SetCircleArea decodeSetCircleArea(ByteBuf body) {
+        int settingAttr = body.readUnsignedByte();
+        int count = body.readUnsignedByte();
+        List<CircleArea> areas = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            CircleArea area = decodeCircleAreaItem(body);
+            if (area != null) areas.add(area);
+        }
+        return new SetCircleArea(settingAttr, areas);
+    }
+
+    private static CircleArea decodeCircleAreaItem(ByteBuf body) {
+        // minimum: ID(4) + attr(2) + lat(4) + lon(4) + radius(4) = 18 bytes
+        if (body.readableBytes() < 18) return null;
+        long areaId = body.readUnsignedInt();
+        AreaAttribute attr = new AreaAttribute(body.readUnsignedShort());
+        double lat = applyHemisphere(body.readUnsignedInt() / 1_000_000.0, attr.southLatitude());
+        double lon = applyHemisphere(body.readUnsignedInt() / 1_000_000.0, attr.westLongitude());
+        long radius = body.readUnsignedInt();
+        Instant startTime = null, endTime = null;
+        if (attr.hasTimeWindow() && body.readableBytes() >= 12) {
+            startTime = readBcdAreaTime(body);
+            endTime   = readBcdAreaTime(body);
+        }
+        int maxSpeed = 0, overspeedSec = 0;
+        if (attr.hasSpeedLimit() && body.readableBytes() >= 3) {
+            maxSpeed    = body.readUnsignedShort();
+            overspeedSec = body.readUnsignedByte();
+        }
+        return new CircleArea(areaId, attr, lat, lon, radius, startTime, endTime, maxSpeed, overspeedSec);
+    }
+
+    private static DeleteArea decodeDeleteArea(ByteBuf body) {
+        if (!body.isReadable()) return new DeleteArea(List.of());
+        int count = body.readUnsignedByte();
+        if (count == 0) return new DeleteArea(List.of()); // delete all
+        List<Long> ids = new ArrayList<>(count);
+        for (int i = 0; i < count && body.readableBytes() >= 4; i++) {
+            ids.add(body.readUnsignedInt());
+        }
+        return new DeleteArea(ids);
+    }
+
+    private static SetRectangleArea decodeSetRectangleArea(ByteBuf body) {
+        int settingAttr = body.readUnsignedByte();
+        int count = body.readUnsignedByte();
+        List<RectangleArea> areas = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            RectangleArea area = decodeRectangleAreaItem(body);
+            if (area != null) areas.add(area);
+        }
+        return new SetRectangleArea(settingAttr, areas);
+    }
+
+    private static RectangleArea decodeRectangleAreaItem(ByteBuf body) {
+        // minimum: ID(4) + attr(2) + 4 corners × 4 = 22 bytes
+        if (body.readableBytes() < 22) return null;
+        long areaId = body.readUnsignedInt();
+        AreaAttribute attr = new AreaAttribute(body.readUnsignedShort());
+        double topLeftLat     = applyHemisphere(body.readUnsignedInt() / 1_000_000.0, attr.southLatitude());
+        double topLeftLon     = applyHemisphere(body.readUnsignedInt() / 1_000_000.0, attr.westLongitude());
+        double bottomRightLat = applyHemisphere(body.readUnsignedInt() / 1_000_000.0, attr.southLatitude());
+        double bottomRightLon = applyHemisphere(body.readUnsignedInt() / 1_000_000.0, attr.westLongitude());
+        Instant startTime = null, endTime = null;
+        if (attr.hasTimeWindow() && body.readableBytes() >= 12) {
+            startTime = readBcdAreaTime(body);
+            endTime   = readBcdAreaTime(body);
+        }
+        int maxSpeed = 0, overspeedSec = 0;
+        if (attr.hasSpeedLimit() && body.readableBytes() >= 3) {
+            maxSpeed     = body.readUnsignedShort();
+            overspeedSec = body.readUnsignedByte();
+        }
+        return new RectangleArea(areaId, attr, topLeftLat, topLeftLon, bottomRightLat, bottomRightLon,
+                startTime, endTime, maxSpeed, overspeedSec);
+    }
+
+    private static SetPolygonArea decodeSetPolygonArea(ByteBuf body) {
+        // minimum: settingAttr(1) + ID(4) + attr(2) + vertexCount(2) = 9 bytes
+        if (body.readableBytes() < 9) return null;
+        int settingAttr = body.readUnsignedByte();
+        long areaId = body.readUnsignedInt();
+        AreaAttribute attr = new AreaAttribute(body.readUnsignedShort());
+        Instant startTime = null, endTime = null;
+        if (attr.hasTimeWindow() && body.readableBytes() >= 12) {
+            startTime = readBcdAreaTime(body);
+            endTime   = readBcdAreaTime(body);
+        }
+        int maxSpeed = 0, overspeedSec = 0;
+        if (attr.hasSpeedLimit() && body.readableBytes() >= 3) {
+            maxSpeed     = body.readUnsignedShort();
+            overspeedSec = body.readUnsignedByte();
+        }
+        int vertexCount = body.readableBytes() >= 2 ? body.readUnsignedShort() : 0;
+        List<Coordinate> vertices = new ArrayList<>(vertexCount);
+        for (int i = 0; i < vertexCount && body.readableBytes() >= 8; i++) {
+            double vLat = applyHemisphere(body.readUnsignedInt() / 1_000_000.0, attr.southLatitude());
+            double vLon = applyHemisphere(body.readUnsignedInt() / 1_000_000.0, attr.westLongitude());
+            vertices.add(new Coordinate(vLat, vLon));
+        }
+        return new SetPolygonArea(settingAttr, new PolygonArea(areaId, attr, startTime, endTime,
+                maxSpeed, overspeedSec, vertices));
+    }
+
+    private static SetRoute decodeSetRoute(ByteBuf body) {
+        // minimum: routeID(4) + routeAttr(2) + turningCount(2) = 8 bytes
+        if (body.readableBytes() < 8) return null;
+        long routeId = body.readUnsignedInt();
+        int routeAttr = body.readUnsignedShort();
+        Instant startTime = null, endTime = null;
+        if ((routeAttr & 0x0001) != 0 && body.readableBytes() >= 12) {
+            startTime = readBcdAreaTime(body);
+            endTime   = readBcdAreaTime(body);
+        }
+        int turningCount = body.readableBytes() >= 2 ? body.readUnsignedShort() : 0;
+        List<TurningPoint> points = new ArrayList<>(turningCount);
+        for (int i = 0; i < turningCount; i++) {
+            TurningPoint pt = decodeTurningPoint(body);
+            if (pt != null) points.add(pt);
+        }
+        return new SetRoute(new RouteArea(routeId, routeAttr, startTime, endTime, points));
+    }
+
+    private static TurningPoint decodeTurningPoint(ByteBuf body) {
+        // minimum: pointID(4) + routeID(4) + lat(4) + lon(4) + width(1) + routeAttr(1) = 18 bytes
+        if (body.readableBytes() < 18) return null;
+        long pointId = body.readUnsignedInt();
+        body.skipBytes(4); // route ID (repeated, matches parent)
+        // hemisphere in per-point route attribute bits 2/3
+        int ptAttr = 0; // read below after lat/lon
+        double lat = body.readUnsignedInt() / 1_000_000.0;
+        double lon = body.readUnsignedInt() / 1_000_000.0;
+        int width  = body.readUnsignedByte();
+        ptAttr     = body.readUnsignedByte();
+        if ((ptAttr & 0x04) != 0) lat = -lat; // south latitude
+        if ((ptAttr & 0x08) != 0) lon = -lon; // west longitude
+        int tooLong = 0, notEnough = 0;
+        if ((ptAttr & 0x01) != 0 && body.readableBytes() >= 4) { // has time thresholds
+            tooLong    = body.readUnsignedShort();
+            notEnough  = body.readUnsignedShort();
+        }
+        int ptMaxSpeed = 0, ptSpeedDuration = 0;
+        if ((ptAttr & 0x02) != 0 && body.readableBytes() >= 3) { // has speed limit
+            ptMaxSpeed      = body.readUnsignedShort();
+            ptSpeedDuration = body.readUnsignedByte();
+        }
+        return new TurningPoint(pointId, lat, lon, width, tooLong, notEnough, ptMaxSpeed, ptSpeedDuration);
+    }
+
+    private static DeleteRoute decodeDeleteRoute(ByteBuf body) {
+        if (!body.isReadable()) return new DeleteRoute(List.of());
+        int count = body.readUnsignedByte();
+        if (count == 0) return new DeleteRoute(List.of());
+        List<Long> ids = new ArrayList<>(count);
+        for (int i = 0; i < count && body.readableBytes() >= 4; i++) {
+            ids.add(body.readUnsignedInt());
+        }
+        return new DeleteRoute(ids);
+    }
+
+    // Reads a 6-byte BCD timestamp (YY-MM-DD-hh-mm-ss) as GMT+8 Instant.
+    // Returns null when the bytes are all-zero (no time constraint).
+    private static Instant readBcdAreaTime(ByteBuf body) {
+        int year  = 2000 + readBcdByte(body);
+        int month = readBcdByte(body);
+        int day   = readBcdByte(body);
+        int hour  = readBcdByte(body);
+        int min   = readBcdByte(body);
+        int sec   = readBcdByte(body);
+        if (month == 0 || day == 0) return null; // all-zero sentinel
+        try {
+            return LocalDateTime.of(year, month, day, hour, min, sec)
+                    .atZone(ZoneId.of("Asia/Shanghai")).toInstant();
+        } catch (DateTimeException e) {
+            return null;
+        }
+    }
+
+    // Negates value when hemisphere flag is true (south lat / west lon)
+    private static double applyHemisphere(double value, boolean negate) {
+        return negate ? -value : value;
     }
 }

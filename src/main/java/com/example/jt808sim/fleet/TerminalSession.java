@@ -23,8 +23,15 @@ import com.example.jt808sim.protocol.ParameterSetting;
 import com.example.jt808sim.protocol.RegistrationResponse;
 import com.example.jt808sim.protocol.SequenceGenerator;
 import com.example.jt808sim.protocol.ServerAck;
+import com.example.jt808sim.fleet.geofence.GeofenceStore;
+import com.example.jt808sim.protocol.inbound.DeleteArea;
+import com.example.jt808sim.protocol.inbound.DeleteRoute;
 import com.example.jt808sim.protocol.inbound.LocationQuery;
 import com.example.jt808sim.protocol.inbound.ManualAlarmConfirm;
+import com.example.jt808sim.protocol.inbound.SetCircleArea;
+import com.example.jt808sim.protocol.inbound.SetPolygonArea;
+import com.example.jt808sim.protocol.inbound.SetRectangleArea;
+import com.example.jt808sim.protocol.inbound.SetRoute;
 import com.example.jt808sim.protocol.inbound.TempLocationTracking;
 import com.example.jt808sim.protocol.inbound.TerminalAttributeQuery;
 import com.example.jt808sim.protocol.inbound.TerminalControl;
@@ -73,6 +80,7 @@ public class TerminalSession {
     private final VehicleState vehicleState = new VehicleState();
     private final AlarmState alarmState = new AlarmState();
     private final AlarmEngine alarmEngine;
+    private final GeofenceStore geofenceStore;
     private final Map<Integer, PendingAck> responseMap = new ConcurrentHashMap<>();
     private final AtomicReference<TerminalState> state = new AtomicReference<>(TerminalState.DISCONNECTED);
     private final Jt1078MediaConfig mediaConfig;
@@ -97,7 +105,8 @@ public class TerminalSession {
         this.eventLoopGroup = eventLoopGroup;
         this.metrics = metrics;
         this.trajectoryEngine = new TrajectoryEngine(identity, config.getFleet().getRouteMode(), Instant.now());
-        this.alarmEngine = new AlarmEngine(identity.getTerminalId());
+        this.alarmEngine    = new AlarmEngine(identity.getTerminalId());
+        this.geofenceStore  = new GeofenceStore(identity.getTerminalId());
         this.mediaConfig = Jt1078MediaConfig.from(config.getJt1078());
         this.mediaCatalog = TerminalMediaCatalog.seed(identity);
     }
@@ -165,6 +174,18 @@ public class TerminalSession {
             handleTerminalAttributeQuery(message);
         } else if (message.body() instanceof TerminalUpdate update) {
             handleTerminalUpdate(message, update);
+        } else if (message.body() instanceof SetCircleArea cmd) {
+            handleSetCircleArea(message, cmd);
+        } else if (message.body() instanceof SetRectangleArea cmd) {
+            handleSetRectangleArea(message, cmd);
+        } else if (message.body() instanceof SetPolygonArea cmd) {
+            handleSetPolygonArea(message, cmd);
+        } else if (message.body() instanceof SetRoute cmd) {
+            handleSetRoute(message, cmd);
+        } else if (message.body() instanceof DeleteArea cmd) {
+            handleDeleteArea(message, cmd, message.header().messageId());
+        } else if (message.body() instanceof DeleteRoute cmd) {
+            handleDeleteRoute(message, cmd);
         } else if (message.body() instanceof Jt1078Command command) {
             handleJt1078Command(message, command);
         }
@@ -211,6 +232,10 @@ public class TerminalSession {
         if (state.get() == TerminalState.AUTHENTICATING
                 && ack.responseMessageId() == MessageIds.TERMINAL_AUTH && ack.success()) {
             enterStreaming();
+        }
+        // Platform ACKing a location report clears the ON_ACK alarm bits (e.g. area entry/exit)
+        if (ack.responseMessageId() == MessageIds.LOCATION_REPORT && ack.success()) {
+            alarmState.clearOnAckBits();
         }
     }
 
@@ -311,6 +336,44 @@ public class TerminalSession {
                         update.upgradeType(), 0));
             }
         }, 2, TimeUnit.SECONDS);
+    }
+
+    // ── Phase 3: geofence / vehicle management ────────────────────────────────
+
+    private void handleSetCircleArea(Jt808Message message, SetCircleArea cmd) {
+        ack(message, MessageIds.SET_CIRCLE_AREA, TerminalGeneralResponseMessage.RESULT_SUCCESS);
+        geofenceStore.setCircles(cmd.settingAttribute(), cmd.areas());
+    }
+
+    private void handleSetRectangleArea(Jt808Message message, SetRectangleArea cmd) {
+        ack(message, MessageIds.SET_RECTANGLE_AREA, TerminalGeneralResponseMessage.RESULT_SUCCESS);
+        geofenceStore.setRectangles(cmd.settingAttribute(), cmd.areas());
+    }
+
+    private void handleSetPolygonArea(Jt808Message message, SetPolygonArea cmd) {
+        ack(message, MessageIds.SET_POLYGON_AREA, TerminalGeneralResponseMessage.RESULT_SUCCESS);
+        geofenceStore.setPolygon(cmd.settingAttribute(), cmd.area());
+    }
+
+    private void handleSetRoute(Jt808Message message, SetRoute cmd) {
+        ack(message, MessageIds.SET_ROUTE, TerminalGeneralResponseMessage.RESULT_SUCCESS);
+        geofenceStore.setRoute(cmd.route());
+    }
+
+    private void handleDeleteArea(Jt808Message message, DeleteArea cmd, int messageId) {
+        ack(message, messageId, TerminalGeneralResponseMessage.RESULT_SUCCESS);
+        if (messageId == MessageIds.DELETE_CIRCLE_AREA) {
+            geofenceStore.deleteCircles(cmd.areaIds());
+        } else if (messageId == MessageIds.DELETE_RECTANGLE_AREA) {
+            geofenceStore.deleteRectangles(cmd.areaIds());
+        } else if (messageId == MessageIds.DELETE_POLYGON_AREA) {
+            geofenceStore.deletePolygons(cmd.areaIds());
+        }
+    }
+
+    private void handleDeleteRoute(Jt808Message message, DeleteRoute cmd) {
+        ack(message, MessageIds.DELETE_ROUTE, TerminalGeneralResponseMessage.RESULT_SUCCESS);
+        geofenceStore.deleteRoutes(cmd.routeIds());
     }
 
     // ── JT1078 media signaling ────────────────────────────────────────────────
@@ -449,8 +512,14 @@ public class TerminalSession {
         }
         lastKnownPosition = snapshot.coordinate();
 
-        // Evaluate alarm conditions and push the resulting word into VehicleState
-        alarmEngine.evaluate(snapshot.speedKph(), alarmState, params, now);
+        // Evaluate geofences; this may set alarm bits 20/21/23 and record area alarm info
+        geofenceStore.evaluate(snapshot.coordinate(), snapshot.speedKph(), alarmState, now);
+        vehicleState.setAreaAlarmInfo(geofenceStore.latestAreaAlarmInfo());
+
+        // Evaluate speed/fatigue/parking alarms using area-specific speed limit if active
+        long effectiveMaxSpeed = geofenceStore.effectiveMaxSpeedKph() > 0
+                ? geofenceStore.effectiveMaxSpeedKph() : params.maxSpeedKph();
+        alarmEngine.evaluate(snapshot.speedKph(), effectiveMaxSpeed, alarmState, params, now);
         vehicleState.setAlarmWord(alarmState.toAlarmWord());
 
         write(new LocationReportMessage(

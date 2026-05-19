@@ -26,6 +26,15 @@ public final class MessageIds {
     public static final int LOCATION_QUERY             = 0x8201;
     public static final int TEMP_LOCATION_TRACKING     = 0x8202;
     public static final int MANUAL_ALARM_CONFIRM       = 0x8203;
+    // Vehicle management / geofencing
+    public static final int SET_CIRCLE_AREA            = 0x8600;
+    public static final int DELETE_CIRCLE_AREA         = 0x8601;
+    public static final int SET_RECTANGLE_AREA         = 0x8602;
+    public static final int DELETE_RECTANGLE_AREA      = 0x8603;
+    public static final int SET_POLYGON_AREA           = 0x8604;
+    public static final int DELETE_POLYGON_AREA        = 0x8605;
+    public static final int SET_ROUTE                  = 0x8606;
+    public static final int DELETE_ROUTE               = 0x8607;
 
     public static final int JT1078_QUERY_AV_ATTRIBUTES = 0x9003;
     public static final int JT1078_UPLOAD_AV_ATTRIBUTES = 0x1003;
