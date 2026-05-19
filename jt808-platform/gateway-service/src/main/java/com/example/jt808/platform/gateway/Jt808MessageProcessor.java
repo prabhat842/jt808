@@ -69,6 +69,9 @@ class Jt808MessageProcessor {
         if (messageId == MessageIds.LOCATION_REPORT && message.body() instanceof TerminalLocationReport location) {
             return handleLocation(message, remoteAddress, terminalId, location);
         }
+        if (messageId == MessageIds.VEHICLE_CONTROL_RESP && message.body() instanceof TerminalLocationReport location) {
+            return handleVehicleControlResponse(message, terminalId, location);
+        }
         if (messageId == MessageIds.TERMINAL_GENERAL_RESPONSE && message.body() instanceof TerminalGeneralResponse response) {
             return handleTerminalResponse(message, terminalId, response);
         }
@@ -107,17 +110,7 @@ class Jt808MessageProcessor {
     private Mono<byte[]> handleLocation(DecodedJt808Message message, String remoteAddress, String terminalId, TerminalLocationReport location) {
         Instant now = Instant.now();
 
-        GpsTelemetryEvent gpsEvent = new GpsTelemetryEvent(
-                terminalId, terminalId, terminalId,
-                location.gpsTime(),
-                location.latitude(), location.longitude(),
-                location.altitudeMeters(),
-                location.speedKph(), location.direction(),
-                location.stateBit(), location.warnBit(),
-                location.positioned(),
-                remoteAddress, now,
-                location.mileageTenthKm(), location.fuelTenthLiters(),
-                location.signalStrength(), location.satelliteCount());
+        GpsTelemetryEvent gpsEvent = buildGpsTelemetryEvent(terminalId, location, remoteAddress, now);
 
         Mono<Void> publish = events.publish(KafkaTopics.TELEMETRY_GPS, terminalId, gpsEvent);
 
@@ -132,6 +125,32 @@ class Jt808MessageProcessor {
         }
 
         return publish.thenReturn(ack(message, 0));
+    }
+
+    private Mono<byte[]> handleVehicleControlResponse(DecodedJt808Message message, String terminalId,
+                                                       TerminalLocationReport location) {
+        Instant now = Instant.now();
+        // Publish a GPS telemetry event carrying the post-control vehicle state snapshot
+        GpsTelemetryEvent event = buildGpsTelemetryEvent(terminalId, location, "control", now);
+        log.info("terminal {} vehicle control response: doorLocked={} speed={}kph",
+                terminalId, location.doorLocked(), location.speedKph());
+        return events.publish(KafkaTopics.TELEMETRY_GPS, terminalId, event).then(Mono.empty());
+    }
+
+    private GpsTelemetryEvent buildGpsTelemetryEvent(String terminalId, TerminalLocationReport location,
+                                                      String remoteAddress, Instant now) {
+        return new GpsTelemetryEvent(
+                terminalId, terminalId, terminalId,
+                location.gpsTime(),
+                location.latitude(), location.longitude(),
+                location.altitudeMeters(),
+                location.speedKph(), location.direction(),
+                location.stateBit(), location.warnBit(),
+                location.positioned(),
+                remoteAddress, now,
+                location.mileageTenthKm(), location.fuelTenthLiters(),
+                location.vehicleSignalWord(), location.ioStatus(),
+                location.signalStrength(), location.satelliteCount());
     }
 
     private List<AlarmEvent> buildAlarmEvents(String terminalId, long prev, long curr,

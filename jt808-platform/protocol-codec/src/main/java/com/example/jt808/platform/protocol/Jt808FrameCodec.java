@@ -116,9 +116,13 @@ public class Jt808FrameCodec {
         }
         if (messageId == MessageIds.LOCATION_REPORT) {
             TerminalLocationReport location = decodeLocation(body);
-            if (location != null) {
-                return location;
-            }
+            if (location != null) return location;
+        }
+        // 0x0500 vehicle control response: skip 2-byte response serial, then location body
+        if (messageId == MessageIds.VEHICLE_CONTROL_RESP && body.readableBytes() >= 2) {
+            body.skipBytes(2); // response serial number
+            TerminalLocationReport location = decodeLocation(body);
+            if (location != null) return location;
         }
         byte[] raw = new byte[body.readableBytes()];
         body.readBytes(raw);
@@ -152,8 +156,10 @@ public class Jt808FrameCodec {
         // Additional info items (Table 26/27) — TLV: ID(1) + len(1) + value
         long mileageTenthKm  = -1;
         int  fuelTenthLiters = -1;
-        int  signalStrength  = 0;
-        int  satelliteCount  = 0;
+        int  vehicleSignalWord = 0;
+        int  ioStatus          = 0;
+        int  signalStrength    = 0;
+        int  satelliteCount    = 0;
 
         while (body.readableBytes() >= 2) {
             int infoId  = body.readUnsignedByte();
@@ -161,10 +167,12 @@ public class Jt808FrameCodec {
             if (body.readableBytes() < infoLen) break;
             int endIdx = body.readerIndex() + infoLen;
             switch (infoId) {
-                case 0x01 -> { if (infoLen >= 4) mileageTenthKm  = body.readUnsignedInt(); }
-                case 0x02 -> { if (infoLen >= 2) fuelTenthLiters = body.readUnsignedShort(); }
-                case 0x30 -> { if (infoLen >= 1) signalStrength   = body.readUnsignedByte(); }
-                case 0x31 -> { if (infoLen >= 1) satelliteCount   = body.readUnsignedByte(); }
+                case 0x01 -> { if (infoLen >= 4) mileageTenthKm    = body.readUnsignedInt(); }
+                case 0x02 -> { if (infoLen >= 2) fuelTenthLiters   = body.readUnsignedShort(); }
+                case 0x25 -> { if (infoLen >= 4) vehicleSignalWord = (int) body.readUnsignedInt(); }
+                case 0x2A -> { if (infoLen >= 2) ioStatus          = body.readUnsignedShort(); }
+                case 0x30 -> { if (infoLen >= 1) signalStrength    = body.readUnsignedByte(); }
+                case 0x31 -> { if (infoLen >= 1) satelliteCount    = body.readUnsignedByte(); }
                 default   -> { /* skip unknown additional info items */ }
             }
             body.readerIndex(endIdx); // advance past any unread bytes of this item
@@ -172,7 +180,8 @@ public class Jt808FrameCodec {
 
         return new TerminalLocationReport(warnBit, stateBit, latitude, longitude,
                 altitude, speed, direction, gpsTime,
-                mileageTenthKm, fuelTenthLiters, signalStrength, satelliteCount);
+                mileageTenthKm, fuelTenthLiters, vehicleSignalWord, ioStatus,
+                signalStrength, satelliteCount);
     }
 
     private static byte[] unescape(byte[] frameBody) {

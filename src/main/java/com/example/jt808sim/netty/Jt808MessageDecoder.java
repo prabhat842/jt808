@@ -13,6 +13,7 @@ import com.example.jt808sim.protocol.TerminalRegistration;
 import com.example.jt808sim.protocol.TerminalGeneralResponse;
 import com.example.jt808sim.protocol.TerminalLocationReport;
 import com.example.jt808sim.fleet.geofence.AreaAttribute;
+import com.example.jt808sim.protocol.inbound.VehicleControlCommand;
 import com.example.jt808sim.fleet.geofence.CircleArea;
 import com.example.jt808sim.fleet.geofence.PolygonArea;
 import com.example.jt808sim.fleet.geofence.RectangleArea;
@@ -171,6 +172,10 @@ public class Jt808MessageDecoder extends ByteToMessageDecoder {
             byte[] data = new byte[body.readableBytes()];
             body.readBytes(data);
             return new TerminalUpdate(upgradeType, mfgId, version, data);
+        }
+        // ── Phase 4: vehicle control ──────────────────────────────────────────
+        if (messageId == MessageIds.VEHICLE_CONTROL && body.isReadable()) {
+            return new VehicleControlCommand(body.readUnsignedByte());
         }
         // ── Phase 3: geofence / vehicle management ────────────────────────────
         if (messageId == MessageIds.SET_CIRCLE_AREA && body.isReadable()) {

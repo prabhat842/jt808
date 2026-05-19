@@ -110,5 +110,15 @@ public class LocationReportMessage extends AbstractJt808Message {
             out.writeInt((int) areaInfo.areaId());
             out.writeByte(areaInfo.direction());
         }
+
+        // 0x25  Vehicle signal status (Table 31, DWORD) — always present
+        out.writeByte(0x25);
+        out.writeByte(4);
+        out.writeInt(vs.vehicleSignalWord());
+
+        // 0x2A  IO status (Table 32, WORD) — always present (usually 0)
+        out.writeByte(0x2A);
+        out.writeByte(2);
+        out.writeShort(vs.ioStatus());
     }
 }

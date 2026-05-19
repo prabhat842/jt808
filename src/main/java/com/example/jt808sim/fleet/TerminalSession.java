@@ -24,6 +24,8 @@ import com.example.jt808sim.protocol.RegistrationResponse;
 import com.example.jt808sim.protocol.SequenceGenerator;
 import com.example.jt808sim.protocol.ServerAck;
 import com.example.jt808sim.fleet.geofence.GeofenceStore;
+import com.example.jt808sim.protocol.inbound.VehicleControlCommand;
+import com.example.jt808sim.protocol.messages.VehicleControlResponseMessage;
 import com.example.jt808sim.protocol.inbound.DeleteArea;
 import com.example.jt808sim.protocol.inbound.DeleteRoute;
 import com.example.jt808sim.protocol.inbound.LocationQuery;
@@ -78,6 +80,7 @@ public class TerminalSession {
     private final SequenceGenerator sequenceGenerator = new SequenceGenerator();
     private final TrajectoryEngine trajectoryEngine;
     private final VehicleState vehicleState = new VehicleState();
+    private final VehicleSignalState vehicleSignalState = new VehicleSignalState();
     private final AlarmState alarmState = new AlarmState();
     private final AlarmEngine alarmEngine;
     private final GeofenceStore geofenceStore;
@@ -105,8 +108,11 @@ public class TerminalSession {
         this.eventLoopGroup = eventLoopGroup;
         this.metrics = metrics;
         this.trajectoryEngine = new TrajectoryEngine(identity, config.getFleet().getRouteMode(), Instant.now());
-        this.alarmEngine    = new AlarmEngine(identity.getTerminalId());
-        this.geofenceStore  = new GeofenceStore(identity.getTerminalId());
+        this.alarmEngine   = new AlarmEngine(identity.getTerminalId());
+        this.geofenceStore = new GeofenceStore(identity.getTerminalId());
+        // Seed VehicleState from identity configuration
+        vehicleState.setLoadStatus(identity.getLoadStatus());
+        vehicleState.setGnssMode(identity.getGnssMode());
         this.mediaConfig = Jt1078MediaConfig.from(config.getJt1078());
         this.mediaCatalog = TerminalMediaCatalog.seed(identity);
     }
@@ -174,6 +180,8 @@ public class TerminalSession {
             handleTerminalAttributeQuery(message);
         } else if (message.body() instanceof TerminalUpdate update) {
             handleTerminalUpdate(message, update);
+        } else if (message.body() instanceof VehicleControlCommand cmd) {
+            handleVehicleControl(message, cmd);
         } else if (message.body() instanceof SetCircleArea cmd) {
             handleSetCircleArea(message, cmd);
         } else if (message.body() instanceof SetRectangleArea cmd) {
@@ -336,6 +344,26 @@ public class TerminalSession {
                         update.upgradeType(), 0));
             }
         }, 2, TimeUnit.SECONDS);
+    }
+
+    // ── Phase 4: vehicle control ──────────────────────────────────────────────
+
+    private void handleVehicleControl(Jt808Message message, VehicleControlCommand cmd) {
+        // Immediately ACK the command (0x0001)
+        ack(message, MessageIds.VEHICLE_CONTROL, TerminalGeneralResponseMessage.RESULT_SUCCESS);
+
+        // Apply door lock/unlock to vehicle state
+        vehicleState.setDoorLocked(cmd.lockDoors());
+        log.info("terminal {} vehicle control: doors {}", identity.getTerminalId(),
+                cmd.lockDoors() ? "locked" : "unlocked");
+
+        // Send 0x0500 vehicle control response with current location + updated status
+        TrajectoryEngine.Snapshot snapshot = trajectoryEngine.snapshot(Instant.now());
+        write(new VehicleControlResponseMessage(
+                sequenceGenerator.next(), identity.getTerminalId(),
+                message.header().sequence(),
+                snapshot.coordinate(), snapshot.speedKph(), snapshot.heading(),
+                Instant.now(), vehicleState));
     }
 
     // ── Phase 3: geofence / vehicle management ────────────────────────────────
@@ -512,7 +540,7 @@ public class TerminalSession {
         }
         lastKnownPosition = snapshot.coordinate();
 
-        // Evaluate geofences; this may set alarm bits 20/21/23 and record area alarm info
+        // Evaluate geofences; may set alarm bits 20/21/23 and record area alarm info
         geofenceStore.evaluate(snapshot.coordinate(), snapshot.speedKph(), alarmState, now);
         vehicleState.setAreaAlarmInfo(geofenceStore.latestAreaAlarmInfo());
 
@@ -521,6 +549,10 @@ public class TerminalSession {
                 ? geofenceStore.effectiveMaxSpeedKph() : params.maxSpeedKph();
         alarmEngine.evaluate(snapshot.speedKph(), effectiveMaxSpeed, alarmState, params, now);
         vehicleState.setAlarmWord(alarmState.toAlarmWord());
+
+        // Update vehicle signal status (lights, indicators, brake) for 0x25 additional info
+        vehicleSignalState.update(snapshot.speedKph(), snapshot.heading(), now);
+        vehicleState.setVehicleSignalWord(vehicleSignalState.toSignalWord());
 
         write(new LocationReportMessage(
                 sequenceGenerator.next(), identity.getTerminalId(),

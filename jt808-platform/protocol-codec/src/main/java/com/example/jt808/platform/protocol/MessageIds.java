@@ -10,6 +10,9 @@ public final class MessageIds {
     public static final int PLATFORM_GENERAL_ACK = 0x8001;
     public static final int REGISTER_RESPONSE = 0x8100;
 
+    public static final int VEHICLE_CONTROL      = 0x8500;
+    public static final int VEHICLE_CONTROL_RESP = 0x0500;
+
     public static final int JT1078_REALTIME_REQUEST = 0x9101;
     public static final int JT1078_PLAYBACK_REQUEST = 0x9201;
     public static final int JT1078_QUERY_RESOURCE_LIST = 0x9205;

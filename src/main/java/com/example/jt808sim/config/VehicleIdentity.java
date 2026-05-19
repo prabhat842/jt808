@@ -14,7 +14,11 @@ public class VehicleIdentity {
     private double targetLon;
     private double speedKph = 40.0;
     private String terminalModel = "JT808SIM-V1";
-    private int plateColor = 1; // 1=blue, 2=yellow, 0=unregistered
+    private int plateColor = 1;     // 1=blue, 2=yellow, 0=unregistered
+    // Status word (Table 25) configuration
+    private int loadStatus = 0;     // 0=empty 1=half 3=full (bits 8-9)
+    private int gnssMode = 1;       // bitmask: bit0=GPS bit1=Beidou bit2=GLONASS bit3=Galileo (bits 18-21)
+    private int doorCount = 3;      // number of doors to simulate (1-5)
     private boolean mediaCapable;
     private List<Integer> mediaChannels = new ArrayList<>();
 
@@ -26,6 +30,9 @@ public class VehicleIdentity {
         copy.manufacturerId = manufacturerId;
         copy.terminalModel = terminalModel;
         copy.plateColor = plateColor;
+        copy.loadStatus = loadStatus;
+        copy.gnssMode = gnssMode;
+        copy.doorCount = doorCount;
         copy.startLat = startLat;
         copy.startLon = startLon;
         copy.targetLat = targetLat;
@@ -141,13 +148,17 @@ public class VehicleIdentity {
         this.terminalModel = terminalModel;
     }
 
-    public int getPlateColor() {
-        return plateColor;
-    }
+    public int getPlateColor() { return plateColor; }
+    public void setPlateColor(int plateColor) { this.plateColor = plateColor; }
 
-    public void setPlateColor(int plateColor) {
-        this.plateColor = plateColor;
-    }
+    public int getLoadStatus()  { return loadStatus; }
+    public void setLoadStatus(int loadStatus)   { this.loadStatus = loadStatus; }
+
+    public int getGnssMode()    { return gnssMode; }
+    public void setGnssMode(int gnssMode)       { this.gnssMode = gnssMode; }
+
+    public int getDoorCount()   { return doorCount; }
+    public void setDoorCount(int doorCount)     { this.doorCount = doorCount; }
 
     public boolean isMediaCapable() {
         return mediaCapable;

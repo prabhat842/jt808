@@ -26,6 +26,9 @@ public final class MessageIds {
     public static final int LOCATION_QUERY             = 0x8201;
     public static final int TEMP_LOCATION_TRACKING     = 0x8202;
     public static final int MANUAL_ALARM_CONFIRM       = 0x8203;
+    // Vehicle control (§8.33-8.34)
+    public static final int VEHICLE_CONTROL            = 0x8500;
+    public static final int VEHICLE_CONTROL_RESP       = 0x0500;
     // Vehicle management / geofencing
     public static final int SET_CIRCLE_AREA            = 0x8600;
     public static final int DELETE_CIRCLE_AREA         = 0x8601;
