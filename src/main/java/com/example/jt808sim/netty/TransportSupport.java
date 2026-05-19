@@ -3,9 +3,12 @@ package com.example.jt808sim.netty;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.epoll.Epoll;
 import io.netty.channel.epoll.EpollEventLoopGroup;
+import io.netty.channel.epoll.EpollServerSocketChannel;
 import io.netty.channel.epoll.EpollSocketChannel;
 import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.ServerSocketChannel;
 import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 
 public final class TransportSupport {
@@ -32,5 +35,10 @@ public final class TransportSupport {
     @SuppressWarnings("unchecked")
     public static Class<? extends SocketChannel> socketChannelClass() {
         return useEpoll() ? EpollSocketChannel.class : NioSocketChannel.class;
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Class<? extends ServerSocketChannel> serverSocketChannelClass() {
+        return useEpoll() ? EpollServerSocketChannel.class : NioServerSocketChannel.class;
     }
 }

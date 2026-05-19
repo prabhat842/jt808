@@ -1,392 +1,698 @@
 # Testing Team Guide
 
-This guide covers how to build, run, and test the JT808/JT1078 Fleet Simulator.
+Two-machine setup: the fleet simulator runs on a dedicated **simulator machine**; the JT808 server and RTVS server run on a separate **server machine**. This matches production topology where terminals are remote devices connecting over a network.
 
-For exact protocol coverage and known gaps, see [protocol-scope.md](protocol-scope.md).
+---
 
-## 1. Environment
+## 1. System Overview
 
-Use Ubuntu 22.04+ or a comparable Linux host.
+```
+SIMULATOR MACHINE                          SERVER MACHINE
+┌─────────────────────────────┐           ┌──────────────────────────────────────┐
+│  jt808 fleet simulator      │           │  jt808-server  (JT808 control plane) │
+│                             │──7611────▶│  port 7611  JT808 signaling          │
+│  Simulates N vehicle        │           │  port 7612  file/attachment           │
+│  terminals, each with:      │           │  port 8888  HTTP admin UI + RTVS API │
+│  • GPS trajectory           │           └──────────────────────────────────────┘
+│  • JT808 registration,      │
+│    auth, heartbeat,         │           ┌──────────────────────────────────────┐
+│    location reports         │           │  jt808-rtvs    (JT1078 media server) │
+│  • JT1078 media streams     │──1078────▶│  port 1078  JT1078 media ingest      │
+│    (video + audio)          │           │  port 8089  HTTP studio UI           │
+└─────────────────────────────┘           └──────────────────────────────────────┘
+```
 
-Required tools:
+| Component | Repo | Runs on |
+|---|---|---|
+| Fleet simulator | `jt808/` | Simulator machine |
+| JT808 server | `jt808-server/` | Server machine |
+| RTVS / JT1078 server | `jt808-rtvs/` | Server machine |
 
-- JDK 21
-- Maven 3.9+
-- Bash
-- `ss`, `lsof`, or similar socket inspection tools
+---
 
-Recommended Linux limits for large tests:
+## 2. Prerequisites
+
+Install on **both machines**:
+
+| Tool | Minimum version | Check |
+|---|---|---|
+| Ubuntu / Debian Linux | 22.04 LTS | `lsb_release -a` |
+| JDK | 21 | `java -version` |
+| Maven | 3.9 | `mvn -version` |
+
+Install on **simulator machine** only (for camera-mode testing):
+
+```bash
+sudo apt-get install ffmpeg
+ffmpeg -version
+```
+
+Raise the file-descriptor limit on the **simulator machine** before large runs:
 
 ```bash
 ulimit -n 200000
 ```
 
-Verify tools:
+---
+
+## 3. Network Requirements
+
+Decide the server machine's IP address — referred to as `SERVER_IP` throughout this guide. Every place you see `SERVER_IP`, substitute the real IP (e.g. `192.168.1.50`).
+
+Open these ports on the **server machine** firewall:
+
+| Port | Protocol | Direction | Purpose |
+|---|---|---|---|
+| 7611 | TCP | inbound from simulator | JT808 signaling |
+| 7612 | TCP | inbound from simulator | JT808 file/attachment |
+| 1078 | TCP | inbound from simulator | JT1078 media ingest |
+| 8888 | TCP | inbound from your browser | JT808 admin UI + RTVS API |
+| 8089 | TCP | inbound from your browser | RTVS studio UI |
+
+Verify connectivity from the simulator machine before running any tests:
 
 ```bash
-java -version
-mvn -version
-ulimit -n
+nc -zv SERVER_IP 7611   # JT808 signaling
+nc -zv SERVER_IP 1078   # JT1078 media
+nc -zv SERVER_IP 8888   # JT808 admin UI
+nc -zv SERVER_IP 8089   # RTVS studio
 ```
 
-## 2. Build
+All four should print `Connection to SERVER_IP <port> port [tcp/*] succeeded!`
 
-From the repository root:
+---
+
+## 4. Build
+
+Run on **each machine** from its respective repository root.
+
+### 4a. Server machine — build jt808-server
 
 ```bash
-mvn clean package
+cd /path/to/jt808-server
+mvn clean package -q
+ls target/jt808-server-*.jar
 ```
 
-Expected result:
-
-- Build exits with status `0`.
-- Runnable jar exists under `target/`.
-- Example jar name:
-
-```text
-target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar
-```
-
-## 2.1 Protocol Unit Tests
-
-Run the protocol-focused unit tests:
+### 4b. Server machine — build jt808-rtvs
 
 ```bash
-mvn test
+cd /path/to/jt808-rtvs
+mvn clean package -q
+ls target/jt808-rtvs-*.jar
 ```
 
-If the default Maven cache is not writable in the test environment, use a local cache:
+### 4c. Simulator machine — build jt808
 
 ```bash
-mvn -Dmaven.repo.local=/tmp/m2-jt808 test
+cd /path/to/jt808
+mvn clean package -q
+ls target/jt808-fleet-simulator-*.jar
 ```
 
-Covered protocol checks:
+**All three builds must exit with `BUILD SUCCESS` before proceeding.**
 
-- 20-digit terminal ID BCD encoding/decoding
-- XOR checksum calculation
-- outbound JT/T 808-2019 header serialization
-- outbound delimiter wrapping and escape handling
-- inbound `0x8001` server acknowledgment decoding
-- inbound `0x8100` registration response decoding
-- terminal registration body field sizing
-- JT/T 1078 `0x9101` real-time request decoding
-- JT/T 1078 `0x9201` playback request decoding
-- JT/T 1078 Table 19 stream packet header layout
-
-Current JT/T 1078 media checks validate framing and synthetic stream transport. The payload is generated test data, not real H.264/AAC media.
-
-## 3. Configuration
-
-Default config:
+Run unit tests on each machine to confirm the build is healthy:
 
 ```bash
-config/fleet.json
+# server machine
+mvn test -f /path/to/jt808-server/pom.xml
+mvn test -f /path/to/jt808-rtvs/pom.xml
+
+# simulator machine
+mvn test -f /path/to/jt808/pom.xml
 ```
 
-Important fields to vary during testing:
+All tests must show `Tests run: N, Failures: 0, Errors: 0`.
 
-- `server.host`
-- `server.port`
-- `fleet.connectionCount`
-- `fleet.connectStaggerMs`
-- `fleet.locationIntervalSeconds`
-- `fleet.heartbeatIntervalSeconds`
-- `fleet.ackTimeoutSeconds`
-- `jt1078.mediaCapableTerminalCount`
-- `jt1078.host`
-- `jt1078.port`
-- `jt1078.streamMode`: `synthetic` or `file`
-- `jt1078.mediaFiles`: MP4 fixture paths used when `streamMode` is `file`
-- `jt1078.videoPayloadBytesPerPacket`
-- `jt1078.videoPacketsPerSecond`
+---
 
-For a quick local smoke run, start with:
+## 5. Configuration
+
+### 5a. jt808-server — `config/server.json`
+
+Set `ingestEnabled` to `false` so jt808-rtvs owns port 1078:
 
 ```json
-"connectionCount": 10,
-"mediaCapableTerminalCount": 2
+{
+  "jt808": {
+    "host": "0.0.0.0",
+    "alarmPort": 7611,
+    "filePort": 7612,
+    "authCode": "server-token"
+  },
+  "rtvs": {
+    "gatewayHost": "0.0.0.0",
+    "gatewayPort": 8888,
+    "mediaHost": "0.0.0.0",
+    "mediaPort": 1078,
+    "ingestEnabled": false
+  }
+}
 ```
 
-For scale testing, increase gradually:
+### 5b. jt808-rtvs — `config/rtvs.json`
 
-```text
-100 -> 1,000 -> 5,000 -> 10,000
+Bind to all interfaces so the simulator machine can reach port 1078:
+
+```json
+{
+  "ingest": {
+    "host": "0.0.0.0",
+    "port": 1078
+  },
+  "studio": {
+    "host": "0.0.0.0",
+    "port": 8089
+  }
+}
 ```
 
-## 4. Run
+### 5c. jt808 simulator — `config/fleet.json`
+
+Replace both `SERVER_IP` references with the server machine's actual IP address:
+
+```json
+{
+  "server": {
+    "host": "SERVER_IP",
+    "port": 7611
+  },
+  "fleet": {
+    "connectionCount": 10,
+    "connectStaggerMs": 20,
+    "locationIntervalSeconds": 5,
+    "heartbeatIntervalSeconds": 30,
+    "ackTimeoutSeconds": 15,
+    "routeMode": "REVERSE"
+  },
+  "jt1078": {
+    "mediaCapableTerminalCount": 2,
+    "host": "SERVER_IP",
+    "port": 1078,
+    "streamMode": "file",
+    "mediaFiles": [
+      "sample-media/city-loop.mp4",
+      "sample-media/road-loop.mp4"
+    ],
+    "videoPayloadBytesPerPacket": 950,
+    "videoPacketsPerSecond": 25
+  },
+  "vehicles": [
+    {
+      "vin": "VIN00000000000001",
+      "terminalId": "00000000000000000001",
+      "plateNumber": "TEST-0001",
+      "manufacturerId": "TEST1",
+      "startLat": 22.250000,
+      "startLon": 72.200000,
+      "targetLat": 22.350000,
+      "targetLon": 72.350000,
+      "speedKph": 45.0,
+      "mediaCapable": true,
+      "mediaChannels": [1]
+    }
+  ]
+}
+```
+
+---
+
+## 6. Startup Sequence
+
+Always start servers before the simulator. Follow the order below exactly.
+
+### Step 1 — Start jt808-server (server machine, terminal 1)
 
 ```bash
+cd /path/to/jt808-server
 java \
-  -Xms512m \
-  -Xmx1g \
+  -Xms256m -Xmx512m \
+  -Djt808.transport=nio \
+  -jar target/jt808-server-0.1.0-SNAPSHOT.jar \
+  --config config/server.json
+```
+
+**Expected startup log lines (within 5 seconds):**
+
+```
+INFO  JT808 alarm server listening on 0.0.0.0:7611
+INFO  JT808 file server listening on 0.0.0.0:7612
+INFO  JT1078 media ingest disabled — expecting external jt808-rtvs on port 1078
+INFO  RTVS gateway API listening on 0.0.0.0:8888
+```
+
+If `ingestEnabled` is still `true`, the line will read `JT1078 media ingest listening on ...` — this means jt808-rtvs cannot bind port 1078. Fix the config and restart.
+
+### Step 2 — Start jt808-rtvs (server machine, terminal 2)
+
+```bash
+cd /path/to/jt808-rtvs
+java \
+  -Xms128m -Xmx256m \
+  -jar target/jt808-rtvs-0.1.0-SNAPSHOT.jar \
+  --config config/rtvs.json
+```
+
+**Expected startup log lines:**
+
+```
+INFO  JT1078 ingest listening on 0.0.0.0:1078
+INFO  RTVS studio listening on 0.0.0.0:8089
+```
+
+Open the studio in a browser: `http://SERVER_IP:8089/`
+
+The page should load and show an empty session list (no streams yet).
+
+### Step 3 — Start the simulator (simulator machine, terminal 1)
+
+```bash
+cd /path/to/jt808
+java \
+  -Xms512m -Xmx1g \
   -XX:+UseG1GC \
   -Dio.netty.allocator.type=pooled \
+  -Djt808.transport=nio \
   -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar \
   --config config/fleet.json
 ```
 
-The simulator prints a refreshing console dashboard with:
+The simulator prints a live dashboard that refreshes every second.
 
-- configured terminal count
-- connected terminal count
-- authenticated sessions
-- outbound/inbound message rates
-- location report rate
-- heartbeat rate
-- active JT1078 media sessions
-- media packet and byte rate
-- ack latency
-- reconnect attempts
-- checksum failures
-- heap usage
+---
 
-If a local sandbox or VM restricts Netty native epoll socket creation, force NIO for the test run:
+## 7. Test Scenarios
 
-```bash
-java -Djt808.transport=nio -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar --config config/fleet.json
+### T-01 — Connection and Authentication
+
+**What it tests:** Basic JT808 lifecycle — register, authenticate, go online.
+
+**Wait:** 30 seconds after simulator start.
+
+**Check simulator dashboard:**
+
+| Counter | Expected |
+|---|---|
+| Configured terminals | Equals `connectionCount` in config |
+| Active connections | Equal to or approaching configured count |
+| Authenticated sessions | Equal to active connections (within 10 seconds) |
+| Connection failures | 0 or low and not climbing |
+| Reconnect attempts | 0 (no disconnects expected) |
+| Invalid checksums | 0 (always) |
+
+**Check jt808-server terminal:**
 ```
-
-## 4.1 Run Server And Simulator Separately
-
-Start the server in one terminal or on a separate machine:
-
-```bash
-java \
-  -Djt808.transport=nio \
-  -cp target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar \
-  com.example.jt808sim.server.ServerMain \
-  --config config/server.json
+RTVS gateway API listening on 0.0.0.0:8888
 ```
+No error lines after terminals connect.
 
-Then point `config/fleet.json` at the server host and run the simulator normally. See [server-side-guide.md](server-side-guide.md).
+**Check jt808-server admin UI:**
+Open `http://SERVER_IP:8888/rtvs` in a browser.
 
-## 5. Required Server Side
+The terminal list should show all connected terminals with their IDs and timestamps.
 
-The simulator is a client fleet. For full lifecycle testing, the test environment needs a JT808/JT1078-compatible server that can:
+**Pass:** Authenticated sessions == configured terminal count. Zero checksum errors.
 
-- accept JT808 TCP connections
-- decode `0x0100` terminal registration
-- send `0x8100` registration response
-- decode `0x0102` authentication
-- send `0x8001` general server ack
-- ack `0x0200` location reports and `0x0002` heartbeats
-- accept JT1078 media transport sessions for media-capable terminals
+---
 
-Without a compatible server, connection counters may rise briefly but authentication and streaming will not complete.
+### T-02 — Location Reporting (GPS Telemetry)
 
-## 6. Smoke Test Script
+**What it tests:** Terminals send periodic `0x0200` location reports; server acknowledges.
 
-For a local positive-path smoke test without a real platform server, start the bundled mock platform in one terminal:
+**Wait:** 2 minutes after T-01 passes.
 
-```bash
-python3 scripts/mock_platform.py
+**Check simulator dashboard:**
+
+| Counter | Expected |
+|---|---|
+| Location reports sent | Non-zero and increasing |
+| Ack latency (avg) | Under 500 ms |
+| Ack latency (P95) | Under 2000 ms |
+| Outbound messages | Increasing steadily |
+
+**Check jt808-server terminal:** No decode errors. Ack messages logged for `0x0200`.
+
+**Pass:** Location reports steadily increment. Ack latency stays within bounds.
+
+---
+
+### T-03 — Heartbeat
+
+**What it tests:** Terminals maintain connection with `0x0002` heartbeats every `heartbeatIntervalSeconds`.
+
+**Wait:** Until the first heartbeat interval elapses (default: 30 seconds after authentication).
+
+**Check simulator dashboard:**
+
+| Counter | Expected |
+|---|---|
+| Heartbeats sent | Non-zero, incrementing once per interval per terminal |
+| Authenticated sessions | Unchanged (no drops) |
+
+**Pass:** Heartbeat count increases at the expected rate. No session drops.
+
+---
+
+### T-04 — JT1078 Media Streaming
+
+**What it tests:** Media-capable terminals open a separate TCP connection to port 1078 and stream JT1078 packets.
+
+**Precondition:** `jt1078.mediaCapableTerminalCount` ≥ 1 in fleet config.
+
+**Wait:** 60 seconds after T-01 passes.
+
+**Check simulator dashboard:**
+
+| Counter | Expected |
+|---|---|
+| Active media sessions | Equal to `mediaCapableTerminalCount` |
+| Media packets sent | Non-zero and increasing |
+| Media bytes sent | Non-zero and increasing |
+| Media connection failures | 0 |
+
+**Check jt808-rtvs terminal:**
+
 ```
-
-Then run the simulator from another terminal:
-
-```bash
-java -Djt808.transport=nio -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar --config config/fleet.json
+INFO  JT1078 <terminalId> ch=1 frames=1 ...
+INFO  JT1078 <terminalId> ch=1 frames=250 ...
 ```
+New log lines appear every 250 frames (~10 seconds at 25 fps).
 
-The mock platform responds to registration/authentication and accepts synthetic JT1078 media sockets. It is only for simulator smoke testing, not protocol certification.
+**Check jt808-rtvs studio:**
+Open `http://SERVER_IP:8089/api/sessions`
 
-Create `tmp/smoke-config.json` from the default config with a small fleet:
-
-```bash
-mkdir -p tmp logs
-cp config/fleet.json tmp/smoke-config.json
-```
-
-Edit:
-
+Response should be a JSON array with one entry per active stream:
 ```json
-"connectionCount": 10,
-"connectStaggerMs": 20,
-"mediaCapableTerminalCount": 2
-```
-
-Run:
-
-```bash
-java \
-  -Xms256m \
-  -Xmx512m \
-  -Dio.netty.allocator.type=pooled \
-  -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar \
-  --config tmp/smoke-config.json \
-  2>&1 | tee logs/smoke.log
-```
-
-Pass criteria:
-
-- process starts without exception
-- dashboard appears
-- connected terminals increase
-- authenticated sessions increase when server is available
-- outbound message rate is non-zero after authentication
-- checksum failures remain `0`
-
-## 7. Scale Test Script
-
-Use a tuned Linux host and a real server target.
-
-Create `tmp/scale-config.json`:
-
-```bash
-mkdir -p tmp logs
-cp config/fleet.json tmp/scale-config.json
-```
-
-Recommended staged values:
-
-```json
-"connectionCount": 1000,
-"connectStaggerMs": 2,
-"locationIntervalSeconds": 5,
-"heartbeatIntervalSeconds": 30,
-"mediaCapableTerminalCount": 100
-```
-
-Run:
-
-```bash
-ulimit -n 200000
-
-java \
-  -Xms512m \
-  -Xmx1g \
-  -XX:+UseG1GC \
-  -Dio.netty.allocator.type=pooled \
-  -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar \
-  --config tmp/scale-config.json \
-  2>&1 | tee logs/scale-1000.log
-```
-
-Then repeat with:
-
-```text
-connectionCount=5000
-connectionCount=10000
-```
-
-Pass criteria:
-
-- process remains alive for the full test duration
-- connected terminal count approaches configured count
-- authenticated count remains stable
-- reconnect attempts do not climb continuously
-- heap remains within configured JVM budget
-- invalid checksum count remains `0`
-- ack latency remains within the server test target
-
-## 8. Socket Inspection
-
-Check active client connections:
-
-```bash
-ss -tan | grep ':7611' | wc -l
-```
-
-Check media connections:
-
-```bash
-ss -tan | grep ':1078' | wc -l
-```
-
-## File-Backed Media Fixtures
-
-The simulator includes small `.mp4` byte fixtures under `sample-media/` and the default config uses:
-
-```json
-"streamMode": "file",
-"mediaFiles": [
-  "sample-media/city-loop.mp4",
-  "sample-media/road-loop.mp4"
+[
+  {
+    "terminalId": "00000000000000000001",
+    "channelId": 1,
+    "active": true,
+    "frames": 850,
+    "bytes": 807500,
+    "lastFrameLength": 950,
+    ...
+  }
 ]
 ```
 
-This mode streams bytes from the files into JT1078 packets. It is useful for repeatable load and transport tests. It is not a video decoder certification test.
-
-## Server Test Console
-
-When the standalone server is running, open:
-
-```text
-http://127.0.0.1:8888/ui
+**Check TCP connections from simulator machine:**
+```bash
+ss -tan | grep SERVER_IP:1078 | wc -l
 ```
+Should equal `mediaCapableTerminalCount`.
 
-Use the console to:
+**Pass:** Active media sessions match config. Frame count grows. RTVS `/api/sessions` returns live data.
 
-- verify online terminal list
-- send `0x9101` start-live commands
-- send `0x9102` stop-live commands
-- confirm terminal general responses in the recent command table
+---
 
-Check Java process:
+### T-05 — RTVS Gateway — Live Video Command
+
+**What it tests:** The RTVS HTTP gateway forwards a `0x9101` (start live video) command through the JT808 server to a terminal; the terminal acknowledges.
+
+**Precondition:** At least one terminal is authenticated (T-01 passed).
+
+**Steps:**
+
+1. Find a connected terminal ID from the admin UI: `http://SERVER_IP:8888/rtvs`
+2. Send a live-start command using the UI's **Start Live** button, or directly via HTTP:
 
 ```bash
-jps -l
+curl -s "http://SERVER_IP:8888/api/live/start?terminalId=00000000000000000001&channel=1"
 ```
 
-## 9. Negative Tests
-
-Run with no server listening:
-
-```bash
-java -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar --config config/fleet.json
-```
-
-Expected:
-
-- connection failures increase
-- reconnect attempts increase with backoff
-- process does not crash
-
-Run with an invalid config:
-
+**Expected response:**
 ```json
-"terminalId": "bad-id"
+{"accepted":true,"offline":false,"commandId":1234,"sequence":3}
 ```
 
-Expected:
+3. The simulator dashboard **Media sessions** count should increment within a few seconds.
+4. The terminal log in jt808-server shows `0x0001` terminal general response received.
+5. Check command history in the admin UI — the command should appear as acknowledged.
 
-- process exits during config validation
-- error mentions `terminalId must be a 20-digit string`
+**Send stop command:**
+```bash
+curl -s "http://SERVER_IP:8888/api/live/stop?terminalId=00000000000000000001&channel=1"
+```
 
-## 10. Evidence to Capture
+Media session count should drop back.
 
-For each test run, save:
+**Pass:** `accepted:true`, command appears in history, media session increments and decrements on start/stop.
 
-- config file used
-- simulator log
-- server log
-- dashboard screenshot or copied dashboard output
-- `java -version`
-- `mvn -version`
-- `ulimit -n`
-- host CPU and memory summary
-- final connected/authenticated/media counts
-- average and P95 ack latency
-- invalid checksum count
-- connection failure count
+---
 
-Useful commands:
+### T-06 — Reconnection After Network Interruption
+
+**What it tests:** Terminals detect a dropped connection and reconnect automatically with exponential backoff.
+
+**Steps:**
+
+1. While the simulator is running (T-01 passed), temporarily block port 7611 on the server machine:
 
 ```bash
-java -version 2>&1 | tee logs/java-version.txt
-mvn -version | tee logs/maven-version.txt
-ulimit -n | tee logs/ulimit.txt
-lscpu | tee logs/lscpu.txt
-free -h | tee logs/memory.txt
+# on server machine — block port 7611 for 60 seconds
+sudo iptables -A INPUT -p tcp --dport 7611 -j DROP
+sleep 60
+sudo iptables -D INPUT -p tcp --dport 7611 -j DROP
 ```
 
-## 11. Known Verification Gap
+2. Watch the simulator dashboard during the block period.
 
-The development environment used to create the current project did not have `java` or `mvn` installed, so the first QA action should be:
+**Expected during block:**
+
+| Counter | Expected |
+|---|---|
+| Active connections | Drops toward 0 |
+| Authenticated sessions | Drops toward 0 |
+| Reconnect attempts | Climbs (backoff: 1s, 2s, 4s, 8s, ...) |
+| Connection failures | Increases |
+
+**Expected after block is removed (within 2 minutes):**
+
+| Counter | Expected |
+|---|---|
+| Active connections | Recovers to configured count |
+| Authenticated sessions | Recovers to configured count |
+| Reconnect attempts | Stops climbing |
+| Invalid checksums | Still 0 |
+
+**Pass:** Full recovery within 2 minutes of network restoration. No checksum errors.
+
+---
+
+### T-07 — Scale Test (100 Terminals, 10 Media Sessions)
+
+**What it tests:** Higher terminal count. Confirms server and simulator handle concurrent load.
+
+**Edit simulator config:**
+```json
+"connectionCount": 100,
+"connectStaggerMs": 10,
+"mediaCapableTerminalCount": 10
+```
+
+**Raise file descriptor limit on simulator machine:**
+```bash
+ulimit -n 200000
+```
+
+**Run simulator:**
+```bash
+java \
+  -Xms512m -Xmx1g \
+  -XX:+UseG1GC \
+  -Dio.netty.allocator.type=pooled \
+  -Djt808.transport=nio \
+  -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar \
+  --config config/fleet.json \
+  2>&1 | tee logs/scale-100.log
+```
+
+**Wait:** 5 minutes after all connections stabilise.
+
+**Pass criteria:**
+
+| Metric | Pass threshold |
+|---|---|
+| Authenticated sessions | ≥ 95 of 100 |
+| Active media sessions | ≥ 9 of 10 |
+| Invalid checksums | 0 |
+| Reconnect attempts | Not climbing |
+| Ack latency avg | < 500 ms |
+| Ack latency P95 | < 2000 ms |
+| jt808-server heap | Stable (not growing) |
+| jt808-rtvs heap | Stable |
+
+**Check session count on RTVS:**
+```bash
+curl -s http://SERVER_IP:8089/api/sessions | python3 -m json.tool | grep '"active": true' | wc -l
+```
+Expected: 10
+
+---
+
+### T-08 — Negative: Simulator Started Before Servers
+
+**What it tests:** Simulator handles unavailable server gracefully without crashing.
+
+**Steps:**
+
+1. Stop both jt808-server and jt808-rtvs.
+2. Start the simulator with `connectionCount: 5`.
+3. Observe for 2 minutes.
+
+**Expected:**
+
+| Counter | Expected |
+|---|---|
+| Active connections | 0 |
+| Connection failures | Climbing |
+| Reconnect attempts | Climbing (with backoff delays) |
+| Invalid checksums | 0 |
+| Process | Still running — no crash or exception |
+
+4. Start jt808-rtvs then jt808-server while simulator is still running.
+
+**Expected within 2 minutes:**
+
+| Counter | Expected |
+|---|---|
+| Active connections | Climbs to 5 |
+| Authenticated sessions | Climbs to 5 |
+
+**Pass:** Simulator survives absence of server. Fully recovers when servers come up.
+
+---
+
+### T-09 — Negative: Invalid Terminal ID in Config
+
+**What it tests:** Config validation rejects malformed terminal IDs before any network activity.
+
+**Edit fleet.json:**
+```json
+"terminalId": "BAD-ID"
+```
+
+**Run simulator.**
+
+**Expected:** Process exits immediately with:
+```
+terminalId must be a 20-digit string
+```
+
+No network connections are attempted.
+
+**Pass:** Clean error message, immediate exit, no partial connections.
+
+---
+
+## 8. What to Verify at Each Stage
+
+| Stage | Where to look | Tool |
+|---|---|---|
+| JT808 connections | Simulator dashboard: Active connections | Console |
+| JT808 auth | Simulator dashboard: Authenticated sessions | Console |
+| JT808 admin list | `http://SERVER_IP:8888/rtvs` | Browser |
+| JT808 command history | `http://SERVER_IP:8888/rtvs` | Browser |
+| JT1078 sessions (RTVS) | `http://SERVER_IP:8089/api/sessions` | Browser / curl |
+| JT1078 session count | Simulator dashboard: Active media sessions | Console |
+| TCP connections to JT808 server | `ss -tan \| grep SERVER_IP:7611 \| wc -l` | Server machine shell |
+| TCP connections to RTVS | `ss -tan \| grep :1078 \| wc -l` | Server machine shell |
+| Server health | `http://SERVER_IP:8089/api/health` | curl |
+| Checksum errors | Simulator dashboard: Invalid checksums | Console — must remain 0 |
+
+---
+
+## 9. Evidence to Capture per Test Run
+
+For each test run, collect and file the following:
 
 ```bash
-mvn clean package
+# on both machines
+java -version 2>&1
+mvn -version
+uname -r
+lscpu | grep -E "Model name|CPU\(s\)"
+free -h
+
+# on simulator machine
+ulimit -n
+
+# save all logs
+cp logs/simulator.log evidence/T-XX-simulator.log
 ```
 
-Record and report any compilation failure with the full Maven output.
+Save a screenshot or text copy of:
+- Simulator dashboard at stable state
+- jt808-server admin UI terminal list (`http://SERVER_IP:8888/rtvs`)
+- RTVS sessions response (`http://SERVER_IP:8089/api/sessions`)
+
+Required metrics to record per test:
+
+| Metric | Value |
+|---|---|
+| Test ID | e.g. T-04 |
+| Date / time | |
+| Simulator machine OS + JDK | |
+| Server machine OS + JDK | |
+| connectionCount | |
+| mediaCapableTerminalCount | |
+| Authenticated sessions at stable state | |
+| Active media sessions at stable state | |
+| Ack latency avg (ms) | |
+| Ack latency P95 (ms) | |
+| Invalid checksums | Must be 0 |
+| Connection failures | |
+| Reconnect attempts | |
+| Pass / Fail | |
+| Notes | |
+
+---
+
+## 10. Shutdown
+
+Always shut down in reverse startup order:
+
+1. Stop the simulator (Ctrl+C on simulator machine)
+2. Stop jt808-rtvs (Ctrl+C on server machine terminal 2)
+3. Stop jt808-server (Ctrl+C on server machine terminal 1)
+
+Both servers handle `SIGINT` cleanly (shutdown hook closes all Netty channels).
+
+---
+
+## 11. Troubleshooting
+
+### Simulator connects but never authenticates
+
+- Confirm jt808-server is running and `authCode` in `server.json` matches what the server sends in the `0x8100` response
+- Check jt808-server logs for decode errors on incoming `0x0100` / `0x0102` messages
+
+### Media sessions never appear in RTVS
+
+- Confirm `jt1078.host` and `jt1078.port` in `fleet.json` point to the **server machine** (not `127.0.0.1`)
+- Confirm jt808-rtvs is running: `curl http://SERVER_IP:8089/api/health`
+- Confirm jt808-server config has `"ingestEnabled": false`
+- Check jt808-rtvs logs for `JT1078 connection from ...` lines
+
+### Port already in use
+
+```bash
+ss -tlnp | grep -E '7611|7612|1078|8888|8089'
+```
+Kill the process holding the port or restart the server.
+
+### Invalid checksum count > 0
+
+This indicates a codec or escape-processing bug. Stop the test, collect logs from both machines, and file a bug report with the raw packet capture if possible:
+
+```bash
+sudo tcpdump -i any -w /tmp/jt808-capture.pcap port 7611
+```
+
+### Connection failures climbing continuously (no recovery)
+
+- Confirm the server machine IP is reachable: `ping SERVER_IP`
+- Confirm firewall rules are open (see Section 3)
+- Check server machine has not run out of file descriptors: `ulimit -n` on server machine

@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: jt808-auth-service
+  main:
+    web-application-type: reactive
+
+server:
+  port: 8091
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+jt808:
+  auth:
+    api-token: admin-token
+    terminal-token: server-token

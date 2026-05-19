@@ -30,6 +30,10 @@ public class MetricsRegistry {
     private final LongAdder registrationFailures = new LongAdder();
     private final LongAdder mediaPackets = new LongAdder();
     private final LongAdder mediaBytes = new LongAdder();
+    private final LongAdder mediaInboundPackets = new LongAdder();
+    private final LongAdder mediaInboundBytes = new LongAdder();
+    private final LongAdder mediaInboundAudioPackets = new LongAdder();
+    private final LongAdder mediaInboundAudioBytes = new LongAdder();
     private final LongAdder mediaConnectionFailures = new LongAdder();
     private final Queue<Long> ackLatenciesMillis = new ConcurrentLinkedQueue<>();
 
@@ -99,6 +103,22 @@ public class MetricsRegistry {
 
     public LongAdder mediaBytes() {
         return mediaBytes;
+    }
+
+    public LongAdder mediaInboundPackets() {
+        return mediaInboundPackets;
+    }
+
+    public LongAdder mediaInboundBytes() {
+        return mediaInboundBytes;
+    }
+
+    public LongAdder mediaInboundAudioPackets() {
+        return mediaInboundAudioPackets;
+    }
+
+    public LongAdder mediaInboundAudioBytes() {
+        return mediaInboundAudioBytes;
     }
 
     public LongAdder mediaConnectionFailures() {

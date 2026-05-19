@@ -7,6 +7,8 @@ import com.example.jt808sim.protocol.Jt808Message;
 import com.example.jt808sim.protocol.MessageIds;
 import com.example.jt808sim.protocol.RegistrationResponse;
 import com.example.jt808sim.protocol.ServerAck;
+import com.example.jt808sim.protocol.TerminalLocationReport;
+import com.example.jt808sim.protocol.TerminalRegistration;
 import com.example.jt808sim.protocol.messages.HeartbeatMessage;
 import com.example.jt808sim.protocol.messages.RegistrationMessage;
 import io.netty.buffer.ByteBuf;
@@ -93,6 +95,59 @@ class Jt808CodecRoundTripTest {
         new RegistrationMessage(1, identity).encodeBody(body);
 
         assertEquals(2 + 2 + 11 + 30 + 30 + 1 + "TEST-0001".getBytes(Jt808CodecSupport.GBK).length, body.readableBytes());
+    }
+
+    @Test
+    void decodesTerminalRegistrationBody() {
+        MetricsRegistry metrics = new MetricsRegistry();
+        EmbeddedChannel channel = new EmbeddedChannel(new Jt808EscapeCodec(), new Jt808MessageDecoder(metrics));
+        VehicleIdentity identity = new VehicleIdentity();
+        identity.setTerminalId("00000000000000000001");
+        identity.setManufacturerId("TEST1");
+        identity.setVin("VIN00000000000001");
+        identity.setPlateNumber("TEST-0001");
+
+        ByteBuf body = Unpooled.buffer();
+        new RegistrationMessage(5, identity).encodeBody(body);
+
+        assertTrue(channel.writeInbound(serverFrame(MessageIds.TERMINAL_REGISTER, identity.getTerminalId(), 5, body)));
+        Jt808Message message = channel.readInbound();
+
+        TerminalRegistration registration = assertInstanceOf(TerminalRegistration.class, message.body());
+        assertEquals("TEST1", registration.manufacturerId());
+        assertEquals("VIN00000000000001", registration.terminalModel());
+        assertEquals(identity.getTerminalId(), registration.terminalIdentifier());
+        assertEquals(2, registration.plateColor());
+        assertEquals("TEST-0001", registration.plateNumber());
+    }
+
+    @Test
+    void decodesLocationReportBody() {
+        MetricsRegistry metrics = new MetricsRegistry();
+        EmbeddedChannel channel = new EmbeddedChannel(new Jt808EscapeCodec(), new Jt808MessageDecoder(metrics));
+
+        ByteBuf body = Unpooled.buffer();
+        body.writeInt(0x00000001);
+        body.writeInt(0x00000002);
+        body.writeInt(22_250_000);
+        body.writeInt(72_200_000);
+        body.writeShort(35);
+        body.writeShort(456);
+        body.writeShort(180);
+        Jt808CodecSupport.writeBcdDigits(body, "260511135244", 6);
+
+        assertTrue(channel.writeInbound(serverFrame(MessageIds.LOCATION_REPORT, "00000000000000000001", 9, body)));
+        Jt808Message message = channel.readInbound();
+
+        TerminalLocationReport location = assertInstanceOf(TerminalLocationReport.class, message.body());
+        assertEquals(1, location.warnBit());
+        assertEquals(2, location.stateBit());
+        assertEquals(22.25, location.latitude());
+        assertEquals(72.2, location.longitude());
+        assertEquals(35, location.altitudeMeters());
+        assertEquals(45.6, location.speedKph());
+        assertEquals(180, location.direction());
+        assertTrue(location.positioned());
     }
 
     private static ByteBuf serverFrame(int messageId, String terminalId, int sequence, ByteBuf body) {

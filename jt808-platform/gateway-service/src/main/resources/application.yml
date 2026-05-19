@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: jt808-gateway-service
+  main:
+    web-application-type: reactive
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+jt808:
+  gateway:
+    host: 0.0.0.0
+    signaling-port: 7611
+    file-port: 7612
+    auth-code: server-token
+    protocol-zone: Asia/Shanghai
+    kafka:
+      enabled: false
+      bootstrap-servers: 127.0.0.1:9092
+      client-id: jt808-gateway
+    redis:
+      enabled: false
+      session-ttl-seconds: 90
+      command-ttl-seconds: 120

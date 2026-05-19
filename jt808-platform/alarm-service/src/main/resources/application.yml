@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: jt808-alarm-service
+  main:
+    web-application-type: reactive
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+jt808:
+  alarm:
+    kafka:
+      enabled: false
+      bootstrap-servers: 127.0.0.1:9092
+      group-id: alarm-service
+    click-house:
+      url: http://127.0.0.1:8123/
+      database: jt808
+      alarm-table: vehicle_alarm
+      attachment-table: vehicle_alarm_file
+      username: default
+      password: ""
+      batch-size: 500
+      flush-interval-ms: 1000

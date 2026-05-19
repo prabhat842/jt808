@@ -7,3 +7,7 @@ tmp/
 .vscode/
 .DS_Store
 jt808_fleet_simulator_codex_blueprint.md
+cvnet.js
+cvnet.formatted.js
+cvnet.ts
+cvnet.d.ts

@@ -1,0 +1,30 @@
+{
+  "jt808": {
+    "host": "0.0.0.0",
+    "alarmPort": 7611,
+    "filePort": 7612,
+    "authCode": "server-token"
+  },
+  "rtvs": {
+    "gatewayHost": "0.0.0.0",
+    "gatewayPort": 8888,
+    "mediaHost": "127.0.0.1",
+    "mediaPort": 1078
+  },
+  "clickHouse": {
+    "enabled": false,
+    "url": "http://127.0.0.1:8123/",
+    "username": "default",
+    "password": "",
+    "database": "jt808",
+    "tablePrefix": "",
+    "cluster": "",
+    "engine": "ReplacingMergeTree",
+    "timezone": "Asia/Shanghai",
+    "createSchema": true,
+    "ttlDays": 365,
+    "batchSize": 500,
+    "flushIntervalMs": 1000,
+    "requestTimeoutMs": 5000
+  }
+}

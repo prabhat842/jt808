@@ -1,0 +1,18 @@
+spring:
+  application:
+    name: jt808-admin-api
+  main:
+    web-application-type: reactive
+
+server:
+  port: 8090
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+jt808:
+  admin:
+    redis-enabled: false

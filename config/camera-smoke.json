@@ -1,0 +1,59 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 7611
+  },
+  "fleet": {
+    "connectionCount": 1,
+    "connectStaggerMs": 20,
+    "locationIntervalSeconds": 5,
+    "heartbeatIntervalSeconds": 30,
+    "ackTimeoutSeconds": 15,
+    "routeMode": "REVERSE"
+  },
+  "jt1078": {
+    "mediaCapableTerminalCount": 1,
+    "host": "127.0.0.1",
+    "port": 1078,
+    "streamMode": "camera",
+    "mediaFiles": [],
+    "videoPayloadBytesPerPacket": 950,
+    "videoPacketsPerSecond": 25,
+    "capture": {
+      "videoEnabled": true,
+      "audioEnabled": true,
+      "videoDevice": "lavfi:testsrc=size=640x360:rate=25",
+      "audioDevice": "lavfi:anullsrc=r=8000:cl=mono",
+      "videoWidth": 640,
+      "videoHeight": 360,
+      "videoFps": 25,
+      "videoBitrateKbps": 800,
+      "audioSampleRate": 8000,
+      "audioChannels": 1,
+      "audioBitrateKbps": 32,
+      "ffmpegPath": "ffmpeg"
+    },
+    "talk": {
+      "enabled": true,
+      "playReceivedAudio": false,
+      "recordReceivedAudio": false,
+      "recordOutputDirectory": "tmp/jt1078-downlink",
+      "receiveBufferMillis": 200
+    }
+  },
+  "vehicles": [
+    {
+      "vin": "VIN00000000000001",
+      "terminalId": "00000000000000000001",
+      "plateNumber": "TEST-0001",
+      "manufacturerId": "TEST1",
+      "startLat": 22.250000,
+      "startLon": 72.200000,
+      "targetLat": 22.350000,
+      "targetLon": 72.350000,
+      "speedKph": 45.0,
+      "mediaCapable": true,
+      "mediaChannels": [1]
+    }
+  ]
+}

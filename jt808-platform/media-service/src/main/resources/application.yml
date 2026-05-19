@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: jt808-media-service
+  main:
+    web-application-type: reactive
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+jt808:
+  media:
+    kafka:
+      enabled: false
+      bootstrap-servers: 127.0.0.1:9092
+      group-id: media-service
+    redis:
+      enabled: false
+      correlation-ttl-seconds: 300

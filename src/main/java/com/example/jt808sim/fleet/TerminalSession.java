@@ -2,14 +2,22 @@ package com.example.jt808sim.fleet;
 
 import com.example.jt808sim.config.FleetConfig;
 import com.example.jt808sim.config.VehicleIdentity;
-import com.example.jt808sim.jt1078.Jt1078CommandHandler;
+import com.example.jt808sim.jt1078.Jt1078Command;
 import com.example.jt808sim.jt1078.Jt1078MediaConfig;
 import com.example.jt808sim.jt1078.Jt1078MediaSession;
+import com.example.jt808sim.jt1078.Jt1078SessionRequest;
+import com.example.jt808sim.jt1078.PlaybackSelection;
+import com.example.jt808sim.jt1078.TerminalMediaCatalog;
+import com.example.jt808sim.jt1078.messages.AudioVideoAttributesMessage;
+import com.example.jt808sim.jt1078.messages.FileUploadCompletionMessage;
+import com.example.jt808sim.jt1078.messages.RealTimeStatusMessage;
+import com.example.jt808sim.jt1078.messages.ResourceListUploadMessage;
 import com.example.jt808sim.monitoring.MetricsRegistry;
 import com.example.jt808sim.physics.TrajectoryEngine;
 import com.example.jt808sim.protocol.Jt808Message;
 import com.example.jt808sim.protocol.MessageIds;
 import com.example.jt808sim.protocol.OutboundJt808Message;
+import com.example.jt808sim.protocol.ParameterSetting;
 import com.example.jt808sim.protocol.RegistrationResponse;
 import com.example.jt808sim.protocol.SequenceGenerator;
 import com.example.jt808sim.protocol.ServerAck;
@@ -17,6 +25,7 @@ import com.example.jt808sim.protocol.messages.AuthenticationMessage;
 import com.example.jt808sim.protocol.messages.HeartbeatMessage;
 import com.example.jt808sim.protocol.messages.LocationReportMessage;
 import com.example.jt808sim.protocol.messages.RegistrationMessage;
+import com.example.jt808sim.protocol.messages.TerminalGeneralResponseMessage;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
@@ -27,7 +36,6 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,6 +49,7 @@ public class TerminalSession {
 
     private final VehicleIdentity identity;
     private final FleetConfig config;
+    private final TerminalParams params;
     private final Bootstrap bootstrap;
     private final EventLoopGroup eventLoopGroup;
     private final MetricsRegistry metrics;
@@ -49,22 +58,24 @@ public class TerminalSession {
     private final Map<Integer, PendingAck> responseMap = new ConcurrentHashMap<>();
     private final AtomicReference<TerminalState> state = new AtomicReference<>(TerminalState.DISCONNECTED);
     private final Jt1078MediaConfig mediaConfig;
-    private final Jt1078CommandHandler mediaCommandHandler = new Jt1078CommandHandler();
+    private final TerminalMediaCatalog mediaCatalog;
     private Channel channel;
     private ScheduledFuture<?> heartbeatTask;
     private ScheduledFuture<?> locationTask;
     private int reconnectAttempt;
     private boolean authenticatedCounted;
-    private List<Jt1078MediaSession> mediaSessions = List.of();
+    private final Map<Integer, Jt1078MediaSession> mediaSessions = new ConcurrentHashMap<>();
 
     public TerminalSession(VehicleIdentity identity, FleetConfig config, Bootstrap bootstrap, EventLoopGroup eventLoopGroup, MetricsRegistry metrics) {
         this.identity = identity;
         this.config = config;
+        this.params = TerminalParams.from(config);
         this.bootstrap = bootstrap;
         this.eventLoopGroup = eventLoopGroup;
         this.metrics = metrics;
         this.trajectoryEngine = new TrajectoryEngine(identity, config.getFleet().getRouteMode(), Instant.now());
         this.mediaConfig = Jt1078MediaConfig.from(config.getJt1078());
+        this.mediaCatalog = TerminalMediaCatalog.seed(identity);
     }
 
     public VehicleIdentity identity() {
@@ -78,7 +89,7 @@ public class TerminalSession {
     public void connect(long delayMillis) {
         state.set(TerminalState.CONNECTING);
         eventLoopGroup.next().schedule(() -> {
-            ChannelFuture future = bootstrap.connect(config.getServer().getHost(), config.getServer().getPort());
+            ChannelFuture future = bootstrap.connect(params.serverHost(), params.serverPort());
             future.addListener((ChannelFutureListener) connectFuture -> {
                 if (connectFuture.isSuccess()) {
                     reconnectAttempt = 0;
@@ -117,8 +128,10 @@ public class TerminalSession {
             handleRegistrationResponse(registrationResponse);
         } else if (message.body() instanceof ServerAck ack) {
             handleServerAck(ack);
-        } else if (mediaCommandHandler.isMediaCommand(message) && identity.isMediaCapable()) {
-            startMediaIfCapable();
+        } else if (message.body() instanceof ParameterSetting setting) {
+            handleParameterSetting(message, setting);
+        } else if (message.body() instanceof Jt1078Command command) {
+            handleJt1078Command(message, command);
         }
     }
 
@@ -164,6 +177,19 @@ public class TerminalSession {
         }
     }
 
+    private void handleParameterSetting(Jt808Message message, ParameterSetting setting) {
+        write(new TerminalGeneralResponseMessage(
+                sequenceGenerator.next(),
+                identity.getTerminalId(),
+                message.header().sequence(),
+                MessageIds.TERMINAL_PARAM_SETTING,
+                TerminalGeneralResponseMessage.RESULT_SUCCESS));
+        boolean reschedule = params.apply(identity.getTerminalId(), setting);
+        if (reschedule && state.get() == TerminalState.STREAMING) {
+            scheduleStreamingTasks();
+        }
+    }
+
     private void enterStreaming() {
         state.set(TerminalState.STREAMING);
         if (!authenticatedCounted) {
@@ -171,19 +197,108 @@ public class TerminalSession {
             authenticatedCounted = true;
         }
         scheduleStreamingTasks();
-        startMediaIfCapable();
+    }
+
+    private void handleJt1078Command(Jt808Message message, Jt1078Command command) {
+        if (!identity.isMediaCapable()) {
+            write(new TerminalGeneralResponseMessage(sequenceGenerator.next(), identity.getTerminalId(), message.header().sequence(), message.header().messageId(), TerminalGeneralResponseMessage.RESULT_UNSUPPORTED));
+            return;
+        }
+
+        write(new TerminalGeneralResponseMessage(sequenceGenerator.next(), identity.getTerminalId(), message.header().sequence(), message.header().messageId(), TerminalGeneralResponseMessage.RESULT_SUCCESS));
+
+        switch (command) {
+            case Jt1078Command.QueryAudioVideoAttributes ignored ->
+                    write(new AudioVideoAttributesMessage(
+                            sequenceGenerator.next(),
+                            identity.getTerminalId(),
+                            mediaConfig,
+                            identity.getMediaChannels()));
+            case Jt1078Command.RealTimeRequest request -> {
+                startMedia(Jt1078SessionRequest.fromRealTimeRequest(request), mediaConfig.withEndpoint(request.host(), request.preferredPort()));
+                write(new RealTimeStatusMessage(sequenceGenerator.next(), identity.getTerminalId(), request.channel(), 0));
+            }
+            case Jt1078Command.RealTimeControl control -> handleRealTimeControl(control);
+            case Jt1078Command.QueryResourceList query ->
+                    write(new ResourceListUploadMessage(
+                            sequenceGenerator.next(),
+                            identity.getTerminalId(),
+                            message.header().sequence(),
+                            mediaCatalog.query(query)));
+            case Jt1078Command.PlaybackRequest request -> handlePlaybackRequest(request);
+            case Jt1078Command.PlaybackControl control -> handlePlaybackControl(control);
+            case Jt1078Command.FileUploadCommand request ->
+                    write(new FileUploadCompletionMessage(
+                            sequenceGenerator.next(),
+                            identity.getTerminalId(),
+                            message.header().sequence(),
+                            mediaCatalog.uploadTargets(request).isEmpty() ? 1 : 0));
+            case Jt1078Command.FileUploadControl ignored -> {
+            }
+            case Jt1078Command.PtzControl ignored -> {
+            }
+            case Jt1078Command.SimpleChannelControl ignored -> {
+            }
+        }
+    }
+
+    private void handleRealTimeControl(Jt1078Command.RealTimeControl control) {
+        if (control.command() == 0 || control.command() == 2 || control.command() == 4) {
+            stopMedia(control.channel());
+        } else if (control.command() == 3) {
+            Jt1078MediaSession existing = mediaSessions.get(control.channel());
+            if (existing != null) {
+                existing.start();
+            }
+        }
+    }
+
+    private void handlePlaybackControl(Jt1078Command.PlaybackControl control) {
+        Jt1078MediaSession session = mediaSessions.get(control.channel());
+        if (session == null) {
+            return;
+        }
+        switch (control.command()) {
+            case 0 -> session.resumePlayback();
+            case 1 -> session.pausePlayback();
+            case 2 -> stopMedia(control.channel());
+            case 3, 4 -> session.setPlaybackSpeed(control.speed());
+            case 5 -> session.seekPlayback(control.playbackPosition());
+            case 6 -> {
+                session.setPlaybackSpeed(1);
+                session.resumePlayback();
+            }
+            default -> {
+            }
+        }
+    }
+
+    private void handlePlaybackRequest(Jt1078Command.PlaybackRequest request) {
+        PlaybackSelection selection = mediaCatalog.playbackTarget(request);
+        if (selection == null) {
+            return;
+        }
+        long startTicks = 0;
+        long endTicks = Math.max(1, Duration.between(selection.effectiveStartTime(), selection.effectiveEndTime()).toSeconds() * 25L);
+        startMedia(
+                Jt1078SessionRequest.fromPlaybackRequest(request).withPlaybackWindow(
+                        startTicks,
+                        endTicks,
+                        selection.effectiveStartTime(),
+                        selection.effectiveEndTime()),
+                mediaConfig.withEndpoint(request.host(), request.preferredPort()));
     }
 
     private void scheduleStreamingTasks() {
         cancelStreamingTasks();
         sendLocationSafely();
         heartbeatTask = channel.eventLoop().scheduleAtFixedRate(this::sendHeartbeatSafely,
-                config.getFleet().getHeartbeatIntervalSeconds(),
-                config.getFleet().getHeartbeatIntervalSeconds(),
+                params.heartbeatIntervalSeconds(),
+                params.heartbeatIntervalSeconds(),
                 TimeUnit.SECONDS);
         locationTask = channel.eventLoop().scheduleAtFixedRate(this::sendLocationSafely,
-                config.getFleet().getLocationIntervalSeconds(),
-                config.getFleet().getLocationIntervalSeconds(),
+                params.locationIntervalSeconds(),
+                params.locationIntervalSeconds(),
                 TimeUnit.SECONDS);
     }
 
@@ -230,7 +345,7 @@ public class TerminalSession {
                 if (removed != null) {
                     removed.future().completeExceptionally(new IllegalStateException("ack timeout"));
                 }
-            }, config.getFleet().getAckTimeoutSeconds(), TimeUnit.SECONDS);
+            }, params.ackTimeoutSeconds(), TimeUnit.SECONDS);
         }
         channel.writeAndFlush(message).addListener(future -> {
             if (future.isSuccess()) {
@@ -256,22 +371,30 @@ public class TerminalSession {
         connect(baseSeconds * 1000 + jitterMillis);
     }
 
-    private void startMediaIfCapable() {
-        if (!identity.isMediaCapable() || identity.getMediaChannels().isEmpty()) {
-            return;
-        }
-        if (!mediaSessions.isEmpty()) {
-            return;
-        }
-        mediaSessions = identity.getMediaChannels().stream()
-                .map(channelId -> new Jt1078MediaSession(eventLoopGroup, mediaConfig, metrics, identity.getTerminalId(), channelId))
-                .toList();
-        mediaSessions.forEach(Jt1078MediaSession::start);
+    private void stopMedia() {
+        mediaSessions.values().forEach(Jt1078MediaSession::stop);
+        mediaSessions.clear();
     }
 
-    private void stopMedia() {
-        mediaSessions.forEach(Jt1078MediaSession::stop);
-        mediaSessions = List.of();
+    private void startMedia(Jt1078SessionRequest request, Jt1078MediaConfig config) {
+        int channelId = request.channel();
+        if (!identity.isMediaCapable() || channelId <= 0) {
+            return;
+        }
+        Jt1078MediaSession existing = mediaSessions.remove(channelId);
+        if (existing != null) {
+            existing.stop();
+        }
+        Jt1078MediaSession session = new Jt1078MediaSession(eventLoopGroup, config, request, metrics, identity.getTerminalId(), channelId);
+        session.start();
+        mediaSessions.put(channelId, session);
+    }
+
+    private void stopMedia(int channelId) {
+        Jt1078MediaSession session = mediaSessions.remove(channelId);
+        if (session != null) {
+            session.stop();
+        }
     }
 
     private void cancelStreamingTasks() {

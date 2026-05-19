@@ -6,37 +6,53 @@ import io.netty.buffer.ByteBuf;
 public class Jt1078MediaPacket {
     private static final int HEADER_ID = 0x30316364;
     private static final int RTP_FLAGS = 0x81;
-    private static final int PAYLOAD_TYPE_H264 = 98;
-    private static final int DATA_TYPE_VIDEO_P_FRAME = 0x1;
-    private static final int SUBPACKAGE_ATOMIC = 0x0;
 
     private final String terminalId;
     private final int channel;
     private final long sequence;
-    private final MediaPayloadSource source;
-    private final int payloadBytes;
+    private final Jt1078Frame frame;
+    private final Subpackage subpackage;
+    private final byte[] payload;
 
-    public Jt1078MediaPacket(String terminalId, int channel, long sequence, MediaPayloadSource source, int payloadBytes) {
+    public Jt1078MediaPacket(String terminalId, int channel, long sequence, Jt1078Frame frame, Subpackage subpackage, byte[] payload) {
         this.terminalId = terminalId;
         this.channel = channel;
         this.sequence = sequence;
-        this.source = source;
-        this.payloadBytes = payloadBytes;
+        this.frame = frame;
+        this.subpackage = subpackage;
+        this.payload = payload == null ? new byte[0] : payload.clone();
     }
 
     public ByteBuf encode(ByteBuf out) {
         out.writeInt(HEADER_ID);
         out.writeByte(RTP_FLAGS);
-        out.writeByte(0x80 | PAYLOAD_TYPE_H264);
+        out.writeByte(0x80 | frame.type().payloadType());
         out.writeShort((int) (sequence & 0xFFFF));
         Jt808CodecSupport.writeBcdDigits(out, terminalId, 6);
         out.writeByte(channel);
-        out.writeByte((DATA_TYPE_VIDEO_P_FRAME << 4) | SUBPACKAGE_ATOMIC);
-        out.writeLong(sequence * 40);
-        out.writeShort(0);
-        out.writeShort(40);
-        out.writeShort(payloadBytes);
-        source.writePayload(out, payloadBytes, sequence);
+        out.writeByte((frame.type().dataTypeNibble() << 4) | subpackage.bits());
+        out.writeLong(frame.timestampMillis());
+        out.writeShort(frame.type().isVideo() ? frame.previousIFrameIntervalMillis() : 0);
+        out.writeShort(frame.type().isVideo() ? frame.previousFrameIntervalMillis() : 0);
+        out.writeShort(payload.length);
+        out.writeBytes(payload);
         return out;
+    }
+
+    public enum Subpackage {
+        ATOMIC(0x0),
+        FIRST(0x1),
+        LAST(0x2),
+        MIDDLE(0x3);
+
+        private final int bits;
+
+        Subpackage(int bits) {
+            this.bits = bits;
+        }
+
+        public int bits() {
+            return bits;
+        }
     }
 }

@@ -43,6 +43,20 @@ For constrained local environments where Netty native epoll cannot create socket
 java -Djt808.transport=nio -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar --config config/fleet.json
 ```
 
+## Server Application
+
+The server side is a separate application entrypoint:
+
+```bash
+java \
+  -Djt808.transport=nio \
+  -cp target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar \
+  com.example.jt808sim.server.ServerMain \
+  --config config/server.json
+```
+
+Server-side operating notes are in [docs/server-side-guide.md](docs/server-side-guide.md).
+
 ## Configuration
 
 Edit [config/fleet.json](config/fleet.json).
@@ -64,6 +78,8 @@ If `fleet.connectionCount` is larger than `vehicles.length`, identities are gene
 
 ## Protocol Scope
 
+See [docs/protocol-scope.md](docs/protocol-scope.md) for the detailed JT/T 808 and JT/T 1078 protocol map derived from the local protocol PDFs.
+
 Implemented JT/T 808 behavior:
 
 - `0x7E` frame delimiters
@@ -83,13 +99,25 @@ Implemented JT/T 1078 behavior:
 - synthetic media transport sessions
 - deterministic packet rate and payload size from config
 - media session, packet, byte, and failure metrics
+- JT/T 1078 Appendix A platform command decoding for `0x9003`, `0x9101`, `0x9102`, `0x9205`, `0x9201`, `0x9202`, `0x9206`, `0x9207`, and `0x9301` through `0x9306`
+- JT/T 808 terminal general response `0x0001` for handled JT/T 1078 platform commands
+- JT/T 1078 terminal uploads for audio/video attributes, stream status, empty resource lists, and file upload completion
+- Table 19-compatible synthetic media packet header
+
+JT/T 1078 signaling is integrated with JT/T 808. The current media stream generator is useful for load and framing tests; payload bytes are synthetic and are not intended for media decoder certification.
 
 The code uses SmallChi/JT808 as a protocol fidelity reference, without coupling to its architecture.
-
-## Current Notes
-
-This repository contains the simulator implementation and documentation. The current execution environment used to create it did not have `java` or `mvn` installed, so build verification should be run on a JDK 21/Maven host.
 
 ## Testing
 
 Testing instructions for QA are in [docs/testing-team-guide.md](docs/testing-team-guide.md).
+
+Server-side RTVS integration notes are in [docs/server-side-rtvs-integration.md](docs/server-side-rtvs-integration.md).
+
+System architecture for the simulator, JT808 server, RTVS/CVNet media platform, and ClickHouse storage is in [docs/system-architecture.md](docs/system-architecture.md).
+
+The next-generation Spring WebFlux/Kafka/Redis/ClickHouse target architecture is in [docs/next-generation-server-architecture.md](docs/next-generation-server-architecture.md).
+
+The first implementation of that architecture is under [jt808-platform](jt808-platform/README.md).
+
+Planned real-camera and two-way-talk JT1078 work is described in [docs/jt1078-camera-talk-implementation.md](docs/jt1078-camera-talk-implementation.md).
