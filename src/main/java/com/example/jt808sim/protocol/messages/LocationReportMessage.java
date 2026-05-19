@@ -87,5 +87,15 @@ public class LocationReportMessage extends AbstractJt808Message {
         out.writeByte(0x31);
         out.writeByte(1);
         out.writeByte(vs.satelliteCount());
+
+        // 0x11  Overspeed additional info (Table 28) — only when overspeed or warning active
+        // Body: location type BYTE; when type==0 (no specific area) no subsequent area ID field.
+        long alarmWord = vs.alarmWord();
+        boolean overspeedAlarmActive = (alarmWord & (1L << 1)) != 0 || (alarmWord & (1L << 13)) != 0;
+        if (overspeedAlarmActive) {
+            out.writeByte(0x11);
+            out.writeByte(1);    // length: 1 byte (type only; area ID absent when type==0)
+            out.writeByte(0);    // location type 0 = no specific position
+        }
     }
 }

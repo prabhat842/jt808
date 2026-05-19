@@ -65,10 +65,13 @@ class AlarmClickHouseWriter {
                 + JsonSupport.field("gps_time", time.format(event.alarmTime())) + ","
                 + JsonSupport.field("alarm_start_time", time.format(event.alarmTime())) + ","
                 + JsonSupport.numberField("alarm_type", event.alarmType()) + ","
+                + JsonSupport.field("alarm_name", event.alarmName()) + ","
                 + JsonSupport.numberField("alarm_level", event.alarmLevel()) + ","
                 + JsonSupport.numberField("warn_bit", event.warnBit()) + ","
+                + JsonSupport.numberField("speed", event.speedKph()) + ","
                 + "\"longitude\":\"" + decimal(event.longitude()) + "\","
                 + "\"latitude\":\"" + decimal(event.latitude()) + "\","
+                + JsonSupport.numberField("cleared", event.cleared() ? 1 : 0) + ","
                 + JsonSupport.field("receive_time", time.format(event.receivedAt()))
                 + "}";
     }

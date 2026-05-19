@@ -1,5 +1,6 @@
 package com.example.jt808.platform.gateway;
 
+import com.example.jt808.platform.contracts.AlarmEvent;
 import com.example.jt808.platform.contracts.CommandResponseEvent;
 import com.example.jt808.platform.contracts.GpsTelemetryEvent;
 import com.example.jt808.platform.contracts.HeartbeatEvent;
@@ -18,6 +19,10 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 class Jt808MessageProcessor {
@@ -29,6 +34,8 @@ class Jt808MessageProcessor {
     private final ActiveConnectionRegistry connections;
     private final EventPublisher events;
     private final SequenceGenerator sequenceGenerator = new SequenceGenerator();
+    // tracks last known alarm word per terminal to detect bit transitions
+    private final ConcurrentHashMap<String, Long> lastAlarmWord = new ConcurrentHashMap<>();
 
     Jt808MessageProcessor(Jt808FrameCodec codec, GatewayProperties properties, GatewaySessionStore sessions, ActiveConnectionRegistry connections, EventPublisher events) {
         this.codec = codec;
@@ -98,22 +105,68 @@ class Jt808MessageProcessor {
     }
 
     private Mono<byte[]> handleLocation(DecodedJt808Message message, String remoteAddress, String terminalId, TerminalLocationReport location) {
-        GpsTelemetryEvent event = new GpsTelemetryEvent(
-                terminalId,
-                terminalId,
-                terminalId,
+        Instant now = Instant.now();
+
+        GpsTelemetryEvent gpsEvent = new GpsTelemetryEvent(
+                terminalId, terminalId, terminalId,
                 location.gpsTime(),
-                location.latitude(),
-                location.longitude(),
+                location.latitude(), location.longitude(),
                 location.altitudeMeters(),
-                location.speedKph(),
-                location.direction(),
-                location.stateBit(),
-                location.warnBit(),
+                location.speedKph(), location.direction(),
+                location.stateBit(), location.warnBit(),
                 location.positioned(),
-                remoteAddress,
-                Instant.now());
-        return events.publish(KafkaTopics.TELEMETRY_GPS, terminalId, event).thenReturn(ack(message, 0));
+                remoteAddress, now,
+                location.mileageTenthKm(), location.fuelTenthLiters(),
+                location.signalStrength(), location.satelliteCount());
+
+        Mono<Void> publish = events.publish(KafkaTopics.TELEMETRY_GPS, terminalId, gpsEvent);
+
+        // Detect alarm bit transitions and publish one AlarmEvent per changed bit
+        long prev = lastAlarmWord.getOrDefault(terminalId, 0L);
+        long curr = location.warnBit();
+        lastAlarmWord.put(terminalId, curr);
+
+        List<AlarmEvent> alarmEvents = buildAlarmEvents(terminalId, prev, curr, location, now);
+        for (AlarmEvent ae : alarmEvents) {
+            publish = publish.then(events.publish(KafkaTopics.TELEMETRY_ALARM, terminalId, ae));
+        }
+
+        return publish.thenReturn(ack(message, 0));
+    }
+
+    private List<AlarmEvent> buildAlarmEvents(String terminalId, long prev, long curr,
+                                               TerminalLocationReport loc, Instant now) {
+        long turnedOn  = curr & ~prev;
+        long turnedOff = prev & ~curr;
+        if (turnedOn == 0 && turnedOff == 0) return List.of();
+
+        List<AlarmEvent> events = new ArrayList<>();
+        for (int bit = 0; bit < 32; bit++) {
+            long mask = 1L << bit;
+            if ((turnedOn & mask) != 0) {
+                events.add(alarmEvent(terminalId, bit, curr, loc, false, now));
+            }
+            if ((turnedOff & mask) != 0) {
+                events.add(alarmEvent(terminalId, bit, prev, loc, true, now));
+            }
+        }
+        return events;
+    }
+
+    private AlarmEvent alarmEvent(String terminalId, int bit, long warnBit,
+                                   TerminalLocationReport loc, boolean cleared, Instant now) {
+        String alarmId = terminalId + "_bit" + bit + "_" + now.getEpochSecond();
+        return new AlarmEvent(
+                alarmId, terminalId, terminalId,
+                bit,
+                AlarmBitMeta.name(bit),
+                AlarmBitMeta.level(bit),
+                warnBit,
+                loc.latitude(), loc.longitude(),
+                loc.speedKph(),
+                cleared,
+                loc.gpsTime(),
+                now);
     }
 
     private Mono<byte[]> handleTerminalResponse(DecodedJt808Message message, String terminalId, TerminalGeneralResponse response) {

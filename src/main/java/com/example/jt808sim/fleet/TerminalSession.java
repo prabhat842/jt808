@@ -71,6 +71,8 @@ public class TerminalSession {
     private final SequenceGenerator sequenceGenerator = new SequenceGenerator();
     private final TrajectoryEngine trajectoryEngine;
     private final VehicleState vehicleState = new VehicleState();
+    private final AlarmState alarmState = new AlarmState();
+    private final AlarmEngine alarmEngine;
     private final Map<Integer, PendingAck> responseMap = new ConcurrentHashMap<>();
     private final AtomicReference<TerminalState> state = new AtomicReference<>(TerminalState.DISCONNECTED);
     private final Jt1078MediaConfig mediaConfig;
@@ -95,6 +97,7 @@ public class TerminalSession {
         this.eventLoopGroup = eventLoopGroup;
         this.metrics = metrics;
         this.trajectoryEngine = new TrajectoryEngine(identity, config.getFleet().getRouteMode(), Instant.now());
+        this.alarmEngine = new AlarmEngine(identity.getTerminalId());
         this.mediaConfig = Jt1078MediaConfig.from(config.getJt1078());
         this.mediaCatalog = TerminalMediaCatalog.seed(identity);
     }
@@ -253,9 +256,11 @@ public class TerminalSession {
 
     private void handleManualAlarmConfirm(Jt808Message message, ManualAlarmConfirm confirm) {
         ack(message, MessageIds.MANUAL_ALARM_CONFIRM, TerminalGeneralResponseMessage.RESULT_SUCCESS);
-        // Phase 2: vehicleState.clearAlarms(confirm.alarmTypeMask())
-        log.debug("terminal {} alarm confirm serial={} mask=0x{}",
-                identity.getTerminalId(), confirm.serialNumber(), Long.toHexString(confirm.alarmTypeMask()));
+        alarmState.confirmAlarms(confirm.alarmTypeMask());
+        log.debug("terminal {} alarm confirm serial={} mask=0x{} remaining=0x{}",
+                identity.getTerminalId(), confirm.serialNumber(),
+                Long.toHexString(confirm.alarmTypeMask()),
+                Long.toHexString(alarmState.toAlarmWord()));
     }
 
     private void handleTerminalParamQueryAll(Jt808Message message) {
@@ -435,17 +440,23 @@ public class TerminalSession {
     }
 
     private void sendLocation() {
-        TrajectoryEngine.Snapshot snapshot = trajectoryEngine.snapshot(Instant.now());
-        // Accumulate odometer distance from last known position
+        Instant now = Instant.now();
+        TrajectoryEngine.Snapshot snapshot = trajectoryEngine.snapshot(now);
+
+        // Accumulate odometer from last known position
         if (lastKnownPosition != null) {
-            double dist = Haversine.distanceMeters(lastKnownPosition, snapshot.coordinate());
-            vehicleState.addDistanceMeters(dist);
+            vehicleState.addDistanceMeters(Haversine.distanceMeters(lastKnownPosition, snapshot.coordinate()));
         }
         lastKnownPosition = snapshot.coordinate();
+
+        // Evaluate alarm conditions and push the resulting word into VehicleState
+        alarmEngine.evaluate(snapshot.speedKph(), alarmState, params, now);
+        vehicleState.setAlarmWord(alarmState.toAlarmWord());
+
         write(new LocationReportMessage(
                 sequenceGenerator.next(), identity.getTerminalId(),
                 snapshot.coordinate(), snapshot.speedKph(), snapshot.heading(),
-                Instant.now(), vehicleState),
+                now, vehicleState),
                 metrics.locationReports()::increment);
     }
 

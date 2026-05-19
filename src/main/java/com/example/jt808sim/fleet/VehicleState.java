@@ -19,7 +19,7 @@ public class VehicleState {
     private static final long BIT_RUNNING     = 1L << 4;   // bit 4: running (vs stopped)
     private static final long BIT_GPS         = 1L << 18;  // bit 18: GPS positioning
 
-    // Alarm word — all bits zero until Phase 2 alarm state machine
+    // Alarm word — updated from AlarmState before each location report
     private volatile long alarmWord = 0L;
 
     // Odometer accumulated in 1/10 km (Table 27 item 0x01, DWORD)

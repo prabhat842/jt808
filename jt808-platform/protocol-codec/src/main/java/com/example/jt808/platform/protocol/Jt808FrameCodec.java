@@ -3,6 +3,7 @@ package com.example.jt808.platform.protocol;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
+import java.time.Instant;
 import java.time.ZoneId;
 import java.util.Arrays;
 
@@ -139,14 +140,39 @@ public class Jt808FrameCodec {
         if (body.readableBytes() < 28) {
             return null;
         }
-        long warnBit = body.readUnsignedInt();
-        long stateBit = body.readUnsignedInt();
-        double latitude = body.readUnsignedInt() / 1_000_000.0;
+        long warnBit   = body.readUnsignedInt();
+        long stateBit  = body.readUnsignedInt();
+        double latitude  = body.readUnsignedInt() / 1_000_000.0;
         double longitude = body.readUnsignedInt() / 1_000_000.0;
-        int altitude = body.readUnsignedShort();
-        double speed = body.readUnsignedShort() / 10.0;
-        int direction = body.readUnsignedShort();
-        return new TerminalLocationReport(warnBit, stateBit, latitude, longitude, altitude, speed, direction, Jt808CodecSupport.readBcdTimestamp(body, protocolZone));
+        int altitude   = body.readUnsignedShort();
+        double speed   = body.readUnsignedShort() / 10.0;
+        int direction  = body.readUnsignedShort();
+        Instant gpsTime = Jt808CodecSupport.readBcdTimestamp(body, protocolZone);
+
+        // Additional info items (Table 26/27) — TLV: ID(1) + len(1) + value
+        long mileageTenthKm  = -1;
+        int  fuelTenthLiters = -1;
+        int  signalStrength  = 0;
+        int  satelliteCount  = 0;
+
+        while (body.readableBytes() >= 2) {
+            int infoId  = body.readUnsignedByte();
+            int infoLen = body.readUnsignedByte();
+            if (body.readableBytes() < infoLen) break;
+            int endIdx = body.readerIndex() + infoLen;
+            switch (infoId) {
+                case 0x01 -> { if (infoLen >= 4) mileageTenthKm  = body.readUnsignedInt(); }
+                case 0x02 -> { if (infoLen >= 2) fuelTenthLiters = body.readUnsignedShort(); }
+                case 0x30 -> { if (infoLen >= 1) signalStrength   = body.readUnsignedByte(); }
+                case 0x31 -> { if (infoLen >= 1) satelliteCount   = body.readUnsignedByte(); }
+                default   -> { /* skip unknown additional info items */ }
+            }
+            body.readerIndex(endIdx); // advance past any unread bytes of this item
+        }
+
+        return new TerminalLocationReport(warnBit, stateBit, latitude, longitude,
+                altitude, speed, direction, gpsTime,
+                mileageTenthKm, fuelTenthLiters, signalStrength, satelliteCount);
     }
 
     private static byte[] unescape(byte[] frameBody) {

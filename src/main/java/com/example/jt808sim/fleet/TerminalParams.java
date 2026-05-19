@@ -286,6 +286,9 @@ public class TerminalParams {
     public long   maxSpeedKph()              { return maxSpeedKph; }
     public long   overspeedDurationSeconds() { return overspeedDurationSeconds; }
     public long   contDriveLimitSeconds()    { return contDriveLimitSeconds; }
+    public long   accumDriveLimitSeconds()   { return accumDriveLimitSeconds; }
+    public long   minRestSeconds()           { return minRestSeconds; }
+    public long   maxParkSeconds()           { return maxParkSeconds; }
 
     // ── Encoding helpers ──────────────────────────────────────────────────────
     private static void putDword(Map<Integer, byte[]> map, int id, long value) {
