@@ -13,6 +13,8 @@ public class VehicleIdentity {
     private double targetLat;
     private double targetLon;
     private double speedKph = 40.0;
+    private String terminalModel = "JT808SIM-V1";
+    private int plateColor = 1; // 1=blue, 2=yellow, 0=unregistered
     private boolean mediaCapable;
     private List<Integer> mediaChannels = new ArrayList<>();
 
@@ -22,6 +24,8 @@ public class VehicleIdentity {
         copy.terminalId = terminalIdForIndex(index);
         copy.plateNumber = suffix(plateNumber, index, 12);
         copy.manufacturerId = manufacturerId;
+        copy.terminalModel = terminalModel;
+        copy.plateColor = plateColor;
         copy.startLat = startLat;
         copy.startLon = startLon;
         copy.targetLat = targetLat;
@@ -127,6 +131,22 @@ public class VehicleIdentity {
 
     public void setSpeedKph(double speedKph) {
         this.speedKph = speedKph;
+    }
+
+    public String getTerminalModel() {
+        return terminalModel;
+    }
+
+    public void setTerminalModel(String terminalModel) {
+        this.terminalModel = terminalModel;
+    }
+
+    public int getPlateColor() {
+        return plateColor;
+    }
+
+    public void setPlateColor(int plateColor) {
+        this.plateColor = plateColor;
     }
 
     public boolean isMediaCapable() {

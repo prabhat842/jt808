@@ -12,6 +12,14 @@ import com.example.jt808sim.protocol.ServerAck;
 import com.example.jt808sim.protocol.TerminalRegistration;
 import com.example.jt808sim.protocol.TerminalGeneralResponse;
 import com.example.jt808sim.protocol.TerminalLocationReport;
+import com.example.jt808sim.protocol.inbound.LocationQuery;
+import com.example.jt808sim.protocol.inbound.ManualAlarmConfirm;
+import com.example.jt808sim.protocol.inbound.TempLocationTracking;
+import com.example.jt808sim.protocol.inbound.TerminalAttributeQuery;
+import com.example.jt808sim.protocol.inbound.TerminalControl;
+import com.example.jt808sim.protocol.inbound.TerminalParamQueryAll;
+import com.example.jt808sim.protocol.inbound.TerminalParamQuerySpec;
+import com.example.jt808sim.protocol.inbound.TerminalUpdate;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
@@ -21,6 +29,7 @@ import java.time.DateTimeException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -103,6 +112,52 @@ public class Jt808MessageDecoder extends ByteToMessageDecoder {
         if (messageId == MessageIds.TERMINAL_PARAM_SETTING) {
             return decodeParameterSetting(body);
         }
+        // ── Phase 1: new platform → terminal messages ─────────────────────────
+        if (messageId == MessageIds.LOCATION_QUERY) {
+            return new LocationQuery();
+        }
+        if (messageId == MessageIds.TEMP_LOCATION_TRACKING && body.readableBytes() >= 6) {
+            int interval = body.readUnsignedShort();
+            long validity = body.readUnsignedInt();
+            return new TempLocationTracking(interval, validity);
+        }
+        if (messageId == MessageIds.MANUAL_ALARM_CONFIRM && body.readableBytes() >= 6) {
+            int serial = body.readUnsignedShort();
+            long mask = body.readUnsignedInt();
+            return new ManualAlarmConfirm(serial, mask);
+        }
+        if (messageId == MessageIds.TERMINAL_PARAM_QUERY_ALL) {
+            return new TerminalParamQueryAll();
+        }
+        if (messageId == MessageIds.TERMINAL_PARAM_QUERY_SPEC && body.isReadable()) {
+            int count = body.readUnsignedByte();
+            List<Integer> ids = new ArrayList<>(count);
+            for (int i = 0; i < count && body.readableBytes() >= 4; i++) {
+                ids.add((int) body.readUnsignedInt());
+            }
+            return new TerminalParamQuerySpec(ids);
+        }
+        if (messageId == MessageIds.TERMINAL_CONTROL && body.isReadable()) {
+            int command = body.readUnsignedByte();
+            String params = body.isReadable() ? body.toString(Jt808CodecSupport.GBK) : "";
+            return new TerminalControl(command, params);
+        }
+        if (messageId == MessageIds.TERMINAL_ATTR_QUERY) {
+            return new TerminalAttributeQuery();
+        }
+        if (messageId == MessageIds.TERMINAL_UPDATE && body.readableBytes() >= 7) {
+            int upgradeType = body.readUnsignedByte();
+            byte[] mfgId = new byte[5];
+            body.readBytes(mfgId);
+            int versionLen = body.readUnsignedByte();
+            String version = body.readableBytes() >= versionLen
+                    ? body.toString(body.readerIndex(), versionLen, java.nio.charset.StandardCharsets.US_ASCII) : "";
+            body.skipBytes(Math.min(versionLen, body.readableBytes()));
+            byte[] data = new byte[body.readableBytes()];
+            body.readBytes(data);
+            return new TerminalUpdate(upgradeType, mfgId, version, data);
+        }
+        // ── JT1078 signaling ──────────────────────────────────────────────────
         Object jt1078Command = Jt1078CommandDecoder.decode(messageId, body);
         if (jt1078Command != null) {
             return jt1078Command;
@@ -111,11 +166,12 @@ public class Jt808MessageDecoder extends ByteToMessageDecoder {
     }
 
     private static TerminalRegistration decodeTerminalRegistration(ByteBuf body) {
+        // Table 7 (JT808-2013): province WORD + city WORD + mfgId BYTE[5] + terminalType BYTE[20] + terminalId BYTE[7] + color BYTE + plate STRING
         int provinceId = body.readableBytes() >= 2 ? body.readUnsignedShort() : 0;
         int cityId = body.readableBytes() >= 2 ? body.readUnsignedShort() : 0;
-        String manufacturerId = readTrimmedAscii(body, 11);
-        String terminalModel = readTrimmedAscii(body, 30);
-        String terminalIdentifier = readTrimmedAscii(body, 30);
+        String manufacturerId = readTrimmedAscii(body, 5);
+        String terminalModel = readTrimmedAscii(body, 20);
+        String terminalIdentifier = readTrimmedAscii(body, 7);
         int plateColor = body.isReadable() ? body.readUnsignedByte() : 0;
         String plateNumber = body.isReadable() ? body.toString(body.readerIndex(), body.readableBytes(), Jt808CodecSupport.GBK).trim() : "";
         body.skipBytes(body.readableBytes());

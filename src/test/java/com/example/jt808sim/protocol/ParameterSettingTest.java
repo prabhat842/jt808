@@ -65,7 +65,7 @@ class ParameterSettingTest {
     void applyUpdatesLocationInterval() {
         TerminalParams p = terminalParamsWithDefaults(30, 5, 15, "127.0.0.1", 7611);
         ParameterSetting setting = ParameterSetting.of(Map.of(
-                TerminalParams.PARAM_LOCATION_INTERVAL, dword(10)
+                TerminalParams.PARAM_INTERVAL_DEFAULT, dword(10)
         ));
         boolean reschedule = p.apply("test-terminal", setting);
         assertEquals(10, p.locationIntervalSeconds());
@@ -145,8 +145,8 @@ class ParameterSettingTest {
         // construct via reflection-free builder using apply on a blank-ish params
         Map<Integer, byte[]> init = new HashMap<>();
         init.put(TerminalParams.PARAM_HEARTBEAT_INTERVAL, dword(heartbeat));
-        init.put(TerminalParams.PARAM_LOCATION_INTERVAL, dword(location));
-        init.put(TerminalParams.PARAM_ACK_TIMEOUT, dword(ackTimeout));
+        init.put(TerminalParams.PARAM_INTERVAL_DEFAULT, dword(location));
+        init.put(TerminalParams.PARAM_TCP_ACK_TIMEOUT, dword(ackTimeout));
         init.put(TerminalParams.PARAM_SERVER_HOST, host.getBytes(Charset.forName("GBK")));
         init.put(TerminalParams.PARAM_SERVER_TCP_PORT, dword(port));
 

@@ -84,7 +84,8 @@ class Jt808CodecRoundTripTest {
     }
 
     @Test
-    void registrationBodyUses2019FieldLengths() {
+    void registrationBodyUsesSpecFieldLengths() {
+        // Table 7 (JT808-2013): province(2) + city(2) + mfgId(5) + terminalType(20) + terminalId(7) + color(1) + plate
         VehicleIdentity identity = new VehicleIdentity();
         identity.setTerminalId("00000000000000000001");
         identity.setManufacturerId("TEST1");
@@ -94,7 +95,7 @@ class Jt808CodecRoundTripTest {
         ByteBuf body = Unpooled.buffer();
         new RegistrationMessage(1, identity).encodeBody(body);
 
-        assertEquals(2 + 2 + 11 + 30 + 30 + 1 + "TEST-0001".getBytes(Jt808CodecSupport.GBK).length, body.readableBytes());
+        assertEquals(2 + 2 + 5 + 20 + 7 + 1 + "TEST-0001".getBytes(Jt808CodecSupport.GBK).length, body.readableBytes());
     }
 
     @Test
@@ -114,10 +115,10 @@ class Jt808CodecRoundTripTest {
         Jt808Message message = channel.readInbound();
 
         TerminalRegistration registration = assertInstanceOf(TerminalRegistration.class, message.body());
-        assertEquals("TEST1", registration.manufacturerId());
-        assertEquals("VIN00000000000001", registration.terminalModel());
-        assertEquals(identity.getTerminalId(), registration.terminalIdentifier());
-        assertEquals(2, registration.plateColor());
+        assertEquals("TEST1", registration.manufacturerId());                    // BYTE[5] manufacturer
+        assertEquals("JT808SIM-V1", registration.terminalModel());              // BYTE[20] terminal type (default model)
+        assertEquals("0000001", registration.terminalIdentifier());             // BYTE[7] device serial (last 7 digits)
+        assertEquals(1, registration.plateColor());                             // default plateColor = 1 (blue)
         assertEquals("TEST-0001", registration.plateNumber());
     }
 
