@@ -41,6 +41,7 @@ public class Jt1078MediaSession {
     private final AtomicLong playbackPositionTicks = new AtomicLong();
     private final AtomicReference<PlaybackState> playbackState = new AtomicReference<>(PlaybackState.RUNNING);
     private volatile int playbackSpeedMultiplier = 1;
+    private volatile Runnable onPlaybackComplete;
     private Channel channel;
     private ScheduledFuture<?> sendTask;
 
@@ -118,6 +119,8 @@ public class Jt1078MediaSession {
         if (request.playbackMode() && nextIndex > request.playbackEndTicks()) {
             playbackState.set(PlaybackState.STOPPED);
             cancel();
+            Runnable cb = onPlaybackComplete;
+            if (cb != null) cb.run();
             return;
         }
         for (Jt1078Frame frame : source.nextFrames(nextIndex)) {
@@ -182,6 +185,10 @@ public class Jt1078MediaSession {
         };
     }
 
+    public void setOnPlaybackComplete(Runnable callback) {
+        this.onPlaybackComplete = callback;
+    }
+
     public void seekPlayback(byte[] playbackPosition) {
         if (!request.playbackMode() || playbackPosition == null || playbackPosition.length < 6) {
             return;
@@ -237,7 +244,10 @@ public class Jt1078MediaSession {
             if (request.uplinkVideo() && request.uplinkAudio()) {
                 return new MultiplexedFrameSource(
                         new FileFrameSource(config.mediaFiles(), config.payloadBytesPerPacket(), Jt1078FrameType.VIDEO_P),
-                        new SyntheticFrameSource(160, Jt1078FrameType.AUDIO));
+                        new G711AudioFrameSource());
+            }
+            if (request.uplinkAudio()) {
+                return new G711AudioFrameSource();
             }
             if (request.preferredFrameType() == Jt1078FrameType.PASSTHROUGH) {
                 return new Jt1078PassThroughFrameSource(config.payloadBytesPerPacket());
@@ -246,8 +256,14 @@ public class Jt1078MediaSession {
         }
         if (request.uplinkVideo() && request.uplinkAudio()) {
             return new MultiplexedFrameSource(
-                    new SyntheticFrameSource(config.payloadBytesPerPacket(), Jt1078FrameType.VIDEO_P),
-                    new SyntheticFrameSource(160, Jt1078FrameType.AUDIO));
+                    new CyclicVideoFrameSource(config.payloadBytesPerPacket()),
+                    new G711AudioFrameSource());
+        }
+        if (request.uplinkVideo()) {
+            return new CyclicVideoFrameSource(config.payloadBytesPerPacket());
+        }
+        if (request.uplinkAudio()) {
+            return new G711AudioFrameSource();
         }
         if (request.preferredFrameType() == Jt1078FrameType.PASSTHROUGH) {
             return new Jt1078PassThroughFrameSource(config.payloadBytesPerPacket());

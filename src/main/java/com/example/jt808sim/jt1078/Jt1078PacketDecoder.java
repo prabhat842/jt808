@@ -10,7 +10,8 @@ import java.util.List;
 
 public class Jt1078PacketDecoder extends ByteToMessageDecoder {
     private static final int HEADER_ID = 0x30316364;
-    private static final int MIN_PACKET_BYTES = 30;
+    // Minimum is a passthrough packet: header(4)+flags(2)+seq(2)+SIM(6)+ch(1)+dataType(1)+len(2) = 18
+    private static final int MIN_PACKET_BYTES = 18;
 
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) {
@@ -26,9 +27,14 @@ public class Jt1078PacketDecoder extends ByteToMessageDecoder {
             String terminalId = Jt808CodecSupport.readBcdDigits(in, 6);
             int channel = in.readUnsignedByte();
             int typeAndSubpackage = in.readUnsignedByte();
-            long timestamp = in.readLong();
-            in.skipBytes(2); // previous I-frame interval
-            in.skipBytes(2); // previous frame interval
+            int dataTypeNibble = (typeAndSubpackage >> 4) & 0x0F;
+            Jt1078FrameType frameType = frameType(dataTypeNibble);
+            // Per Table 19: passthrough frames carry no timestamp; non-video frames carry no intervals
+            long timestamp = frameType.hasTimestamp() ? in.readLong() : 0L;
+            if (frameType.hasIntervals()) {
+                in.skipBytes(2); // previous I-frame interval
+                in.skipBytes(2); // previous frame interval
+            }
             int payloadLength = in.readUnsignedShort();
             if (in.readableBytes() < payloadLength) {
                 in.resetReaderIndex();
@@ -40,7 +46,7 @@ public class Jt1078PacketDecoder extends ByteToMessageDecoder {
                     sequence,
                     terminalId,
                     channel,
-                    frameType((typeAndSubpackage >> 4) & 0x0F),
+                    frameType,
                     typeAndSubpackage & 0x0F,
                     timestamp,
                     payload));

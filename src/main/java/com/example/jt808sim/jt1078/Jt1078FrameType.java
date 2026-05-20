@@ -26,4 +26,14 @@ public enum Jt1078FrameType {
     public boolean isVideo() {
         return this == VIDEO_I || this == VIDEO_P || this == VIDEO_B;
     }
+
+    /** Per Table 19: passthrough frames carry no timestamp field. */
+    public boolean hasTimestamp() {
+        return this != PASSTHROUGH;
+    }
+
+    /** Per Table 19: I-frame and frame interval fields are absent for non-video frames. */
+    public boolean hasIntervals() {
+        return isVideo();
+    }
 }

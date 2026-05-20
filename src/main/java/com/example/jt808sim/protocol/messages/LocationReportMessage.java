@@ -120,5 +120,49 @@ public class LocationReportMessage extends AbstractJt808Message {
         out.writeByte(0x2A);
         out.writeByte(2);
         out.writeShort(vs.ioStatus());
+
+        // ── Video alarm additional info (Table 13, JT/T 1078-2016) ───────────
+
+        // 0x14  Video alarm word (DWORD, Table 14 bit flags)
+        int videoAlarmWord = vs.videoAlarmWord();
+        if (videoAlarmWord != 0) {
+            out.writeByte(0x14);
+            out.writeByte(4);
+            out.writeInt(videoAlarmWord);
+        }
+
+        // 0x15  Video signal loss per channel (DWORD bitmask, bit0=ch1…bit31=ch32)
+        int signalLost = vs.videoSignalLostChannels();
+        if (signalLost != 0) {
+            out.writeByte(0x15);
+            out.writeByte(4);
+            out.writeInt(signalLost);
+        }
+
+        // 0x16  Video signal blocking per channel (DWORD bitmask)
+        int shield = vs.videoShieldChannels();
+        if (shield != 0) {
+            out.writeByte(0x16);
+            out.writeByte(4);
+            out.writeInt(shield);
+        }
+
+        // 0x17  Memory failure (WORD bitmask: bit0–11=main memory slots, bit12–15=DR)
+        int memFail = vs.memoryFailMask();
+        if (memFail != 0) {
+            out.writeByte(0x17);
+            out.writeByte(2);
+            out.writeShort(memFail);
+        }
+
+        // 0x18  Abnormal driving behaviour (WORD type flags + BYTE fatigue degree)
+        int drivingBehavior = vs.abnormalDrivingBehavior();
+        int fatigue = vs.fatigueDegree();
+        if (drivingBehavior != 0 || fatigue > 0) {
+            out.writeByte(0x18);
+            out.writeByte(3);
+            out.writeShort(drivingBehavior);
+            out.writeByte(fatigue);
+        }
     }
 }

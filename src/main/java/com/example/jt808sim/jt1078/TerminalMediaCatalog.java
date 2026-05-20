@@ -27,29 +27,31 @@ public class TerminalMediaCatalog {
         }
         Instant now = Instant.now();
         List<RecordedMediaResource> resources = new ArrayList<>();
-        for (int channel : identity.getMediaChannels()) {
+        List<Integer> channels = identity.getMediaChannels();
+        for (int i = 0; i < channels.size(); i++) {
+            int channel = channels.get(i);
+            // Entry 1: 60–50 min ago, audio+video, main stream, main memory
             resources.add(new RecordedMediaResource(
-                    IDS.incrementAndGet(),
-                    channel,
-                    now.minus(Duration.ofMinutes(15)),
-                    now.minus(Duration.ofMinutes(10)),
-                    0,
-                    0,
-                    2,
-                    1,
-                    1,
-                    512_000L));
+                    IDS.incrementAndGet(), channel,
+                    now.minus(Duration.ofMinutes(60)), now.minus(Duration.ofMinutes(50)),
+                    0, 0, 0, 1, 1, 768_000L));
+            // Entry 2: 30–20 min ago, video only, main stream, main memory, video signal-loss alarm
             resources.add(new RecordedMediaResource(
-                    IDS.incrementAndGet(),
-                    channel,
-                    now.minus(Duration.ofMinutes(8)),
-                    now.minus(Duration.ofMinutes(3)),
-                    0,
-                    0,
-                    2,
-                    1,
-                    1,
-                    768_000L));
+                    IDS.incrementAndGet(), channel,
+                    now.minus(Duration.ofMinutes(30)), now.minus(Duration.ofMinutes(20)),
+                    0, 1L, 2, 1, 1, 512_000L));
+            // Entry 3: 10–5 min ago, audio+video, sub-stream, disaster-recovery memory
+            resources.add(new RecordedMediaResource(
+                    IDS.incrementAndGet(), channel,
+                    now.minus(Duration.ofMinutes(10)), now.minus(Duration.ofMinutes(5)),
+                    0, 0, 0, 2, 2, 256_000L));
+            // Entry 4 (first channel only): audio-only clip, 15–12 min ago
+            if (i == 0) {
+                resources.add(new RecordedMediaResource(
+                        IDS.incrementAndGet(), channel,
+                        now.minus(Duration.ofMinutes(15)), now.minus(Duration.ofMinutes(12)),
+                        0, 0, 1, 1, 1, 128_000L));
+            }
         }
         return new TerminalMediaCatalog(resources);
     }

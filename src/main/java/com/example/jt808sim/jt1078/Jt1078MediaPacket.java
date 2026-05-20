@@ -31,9 +31,13 @@ public class Jt1078MediaPacket {
         Jt808CodecSupport.writeBcdDigits(out, terminalId, 6);
         out.writeByte(channel);
         out.writeByte((frame.type().dataTypeNibble() << 4) | subpackage.bits());
-        out.writeLong(frame.timestampMillis());
-        out.writeShort(frame.type().isVideo() ? frame.previousIFrameIntervalMillis() : 0);
-        out.writeShort(frame.type().isVideo() ? frame.previousFrameIntervalMillis() : 0);
+        if (frame.type().hasTimestamp()) {
+            out.writeLong(frame.timestampMillis());
+        }
+        if (frame.type().hasIntervals()) {
+            out.writeShort(frame.previousIFrameIntervalMillis());
+            out.writeShort(frame.previousFrameIntervalMillis());
+        }
         out.writeShort(payload.length);
         out.writeBytes(payload);
         return out;

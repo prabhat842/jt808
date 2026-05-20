@@ -79,6 +79,20 @@ public class VehicleState {
     // ── Area alarm info for 0x12 additional info ──────────────────────────────
     private volatile AreaAlarmInfo areaAlarmInfo;
 
+    // ── Video alarm additional info (0x14–0x18, Table 13–15, JT/T 1078-2016) ──
+    /** 0x14 — video alarm word (Table 14 bits: 0=signal loss, 1=blocking, 2=memory, …). */
+    private volatile int videoAlarmWord = 0;
+    /** 0x15 — video signal loss per logical channel (DWORD bitmask, bit0=ch1…bit31=ch32). */
+    private volatile int videoSignalLostChannels = 0;
+    /** 0x16 — video signal blocking per logical channel (DWORD bitmask). */
+    private volatile int videoShieldChannels = 0;
+    /** 0x17 — memory failure (WORD bitmask: bit0–bit11=main memory, bit12–bit15=DR storage). */
+    private volatile int memoryFailMask = 0;
+    /** 0x18 — abnormal driving behaviour type flags (Table 15 WORD: bit0=fatigue, bit1=call, bit2=smoking). */
+    private volatile int abnormalDrivingBehavior = 0;
+    /** 0x18 — degree of fatigue (0–100, per Table 15). */
+    private volatile int fatigueDegree = 0;
+
     // ── Alarm word accessors ──────────────────────────────────────────────────
 
     public long alarmWord()               { return alarmWord; }
@@ -115,6 +129,20 @@ public class VehicleState {
     public int ioStatus()                 { return ioStatus; }
     public AreaAlarmInfo areaAlarmInfo()  { return areaAlarmInfo; }
     public void setAreaAlarmInfo(AreaAlarmInfo info) { this.areaAlarmInfo = info; }
+
+    // ── Video alarm accessors ─────────────────────────────────────────────────
+    public int videoAlarmWord()               { return videoAlarmWord; }
+    public void setVideoAlarmWord(int w)      { this.videoAlarmWord = w; }
+    public int videoSignalLostChannels()      { return videoSignalLostChannels; }
+    public void setVideoSignalLostChannels(int mask) { this.videoSignalLostChannels = mask; }
+    public int videoShieldChannels()          { return videoShieldChannels; }
+    public void setVideoShieldChannels(int mask)     { this.videoShieldChannels = mask; }
+    public int memoryFailMask()               { return memoryFailMask; }
+    public void setMemoryFailMask(int mask)   { this.memoryFailMask = mask; }
+    public int abnormalDrivingBehavior()      { return abnormalDrivingBehavior; }
+    public void setAbnormalDrivingBehavior(int flags) { this.abnormalDrivingBehavior = flags; }
+    public int fatigueDegree()                { return fatigueDegree; }
+    public void setFatigueDegree(int degree)  { this.fatigueDegree = Math.max(0, Math.min(100, degree)); }
 
     // ── Status word computation ───────────────────────────────────────────────
 

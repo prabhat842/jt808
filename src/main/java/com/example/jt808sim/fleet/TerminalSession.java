@@ -6,11 +6,16 @@ import com.example.jt808sim.jt1078.Jt1078Command;
 import com.example.jt808sim.jt1078.Jt1078MediaConfig;
 import com.example.jt808sim.jt1078.Jt1078MediaSession;
 import com.example.jt808sim.jt1078.Jt1078SessionRequest;
+import com.example.jt808sim.jt1078.Jt1078UploadSimulator;
 import com.example.jt808sim.jt1078.PlaybackSelection;
+import com.example.jt808sim.jt1078.PtzState;
+import com.example.jt808sim.jt1078.RecordedMediaResource;
 import com.example.jt808sim.jt1078.TerminalMediaCatalog;
 import com.example.jt808sim.jt1078.messages.AudioVideoAttributesMessage;
 import com.example.jt808sim.jt1078.messages.FileUploadCompletionMessage;
+import com.example.jt808sim.jt1078.messages.PassengerTrafficMessage;
 import com.example.jt808sim.jt1078.messages.RealTimeStatusMessage;
+import com.example.jt808sim.jt1078.messages.ResourceListEntry;
 import com.example.jt808sim.jt1078.messages.ResourceListUploadMessage;
 import com.example.jt808sim.monitoring.MetricsRegistry;
 import com.example.jt808sim.physics.Coordinate;
@@ -116,12 +121,16 @@ public class TerminalSession {
     private final Jt1078MediaConfig mediaConfig;
     private final TerminalMediaCatalog mediaCatalog;
     private final Jt808MultimediaStore multimediaStore = new Jt808MultimediaStore();
+    private final Map<Integer, PtzState> ptzStateByChannel = new ConcurrentHashMap<>();
+    private final Jt1078UploadSimulator uploadSimulator = new Jt1078UploadSimulator();
 
     private Channel channel;
     private ScheduledFuture<?> heartbeatTask;
     private ScheduledFuture<?> locationTask;
     private ScheduledFuture<?> tempTrackingTask;
     private ScheduledFuture<?> tempTrackingRevertTask;
+    private ScheduledFuture<?> passengerTask;
+    private Instant passengerWindowStart = Instant.now();
     private Coordinate lastKnownPosition;
     private int reconnectAttempt;
     private boolean authenticatedCounted;
@@ -637,16 +646,14 @@ public class TerminalSession {
                     write(new ResourceListUploadMessage(
                             sequenceGenerator.next(), identity.getTerminalId(),
                             message.header().sequence(), mediaCatalog.query(query)));
-            case Jt1078Command.PlaybackRequest request -> handlePlaybackRequest(request);
+            case Jt1078Command.PlaybackRequest request -> handlePlaybackRequest(message, request);
             case Jt1078Command.PlaybackControl control -> handlePlaybackControl(control);
-            case Jt1078Command.FileUploadCommand request ->
-                    write(new FileUploadCompletionMessage(
-                            sequenceGenerator.next(), identity.getTerminalId(),
-                            message.header().sequence(),
-                            mediaCatalog.uploadTargets(request).isEmpty() ? 1 : 0));
-            case Jt1078Command.FileUploadControl ignored -> { }
-            case Jt1078Command.PtzControl ignored -> { }
-            case Jt1078Command.SimpleChannelControl ignored -> { }
+            case Jt1078Command.FileUploadCommand request -> handleFileUploadCommand(message, request);
+            case Jt1078Command.FileUploadControl ctrl -> uploadSimulator.control(ctrl.responseSequence(), ctrl.control());
+            case Jt1078Command.PtzControl ptz -> ptzStateByChannel
+                    .computeIfAbsent(ptz.channel(), k -> new PtzState())
+                    .applyRotation(ptz.direction(), ptz.speed());
+            case Jt1078Command.SimpleChannelControl ctrl -> handleSimpleChannelControl(ctrl);
         }
     }
 
@@ -673,15 +680,57 @@ public class TerminalSession {
         }
     }
 
-    private void handlePlaybackRequest(Jt1078Command.PlaybackRequest request) {
+    private void handlePlaybackRequest(Jt808Message message, Jt1078Command.PlaybackRequest request) {
         PlaybackSelection selection = mediaCatalog.playbackTarget(request);
         if (selection == null) return;
+        // §5.6.3: terminal uploads resource list (0x1205) before streaming
+        RecordedMediaResource res = selection.resource();
+        write(new ResourceListUploadMessage(
+                sequenceGenerator.next(), identity.getTerminalId(),
+                message.header().sequence(),
+                List.of(new ResourceListEntry(
+                        res.channel(), res.startTime(), res.endTime(),
+                        res.alarmFlagsHigh(), res.alarmFlagsLow(),
+                        res.audioVideoType(), res.streamType(), res.memoryType(), res.fileSizeBytes()))));
         long endTicks = Math.max(1, Duration.between(
                 selection.effectiveStartTime(), selection.effectiveEndTime()).toSeconds() * 25L);
-        startMedia(
+        Jt1078MediaSession session = startMedia(
                 Jt1078SessionRequest.fromPlaybackRequest(request).withPlaybackWindow(
                         0, endTicks, selection.effectiveStartTime(), selection.effectiveEndTime()),
                 mediaConfig.withEndpoint(request.host(), request.preferredPort()));
+        if (session != null) {
+            int ch = request.channel();
+            session.setOnPlaybackComplete(() -> {
+                mediaSessions.remove(ch, session);
+                write(new RealTimeStatusMessage(sequenceGenerator.next(), identity.getTerminalId(), ch, 0));
+            });
+        }
+    }
+
+    private void handleFileUploadCommand(Jt808Message message, Jt1078Command.FileUploadCommand request) {
+        List<RecordedMediaResource> targets = mediaCatalog.uploadTargets(request);
+        int cmdSeq = message.header().sequence();
+        if (targets.isEmpty()) {
+            write(new FileUploadCompletionMessage(
+                    sequenceGenerator.next(), identity.getTerminalId(), cmdSeq, 1));
+            return;
+        }
+        long totalBytes = targets.stream().mapToLong(RecordedMediaResource::fileSizeBytes).sum();
+        uploadSimulator.startUpload(cmdSeq, totalBytes, channel.eventLoop(),
+                result -> write(new FileUploadCompletionMessage(
+                        sequenceGenerator.next(), identity.getTerminalId(), cmdSeq, result)));
+    }
+
+    private void handleSimpleChannelControl(Jt1078Command.SimpleChannelControl ctrl) {
+        PtzState state = ptzStateByChannel.computeIfAbsent(ctrl.channel(), k -> new PtzState());
+        switch (ctrl.messageId()) {
+            case MessageIds.JT1078_FOCUS    -> state.applyFocus(ctrl.value());
+            case MessageIds.JT1078_APERTURE -> state.applyAperture(ctrl.value());
+            case MessageIds.JT1078_WIPER    -> state.setWiper(ctrl.value() == 1);
+            case MessageIds.JT1078_INFRARED -> state.setInfrared(ctrl.value() == 1);
+            case MessageIds.JT1078_ZOOM     -> state.applyZoom(ctrl.value());
+            default -> { }
+        }
     }
 
     // ── Streaming tasks ───────────────────────────────────────────────────────
@@ -695,6 +744,11 @@ public class TerminalSession {
         locationTask = channel.eventLoop().scheduleAtFixedRate(
                 this::sendLocationSafely,
                 params.locationIntervalSeconds(), params.locationIntervalSeconds(), TimeUnit.SECONDS);
+        if (identity.isMediaCapable()) {
+            passengerWindowStart = Instant.now();
+            passengerTask = channel.eventLoop().scheduleAtFixedRate(
+                    this::sendPassengerTrafficSafely, 30, 30, TimeUnit.MINUTES);
+        }
     }
 
     private void startTempTracking(int intervalSeconds, long validitySeconds) {
@@ -713,8 +767,9 @@ public class TerminalSession {
     }
 
     private void cancelStreamingTasks() {
-        if (heartbeatTask != null) { heartbeatTask.cancel(false); heartbeatTask = null; }
-        if (locationTask != null)  { locationTask.cancel(false);  locationTask = null; }
+        if (heartbeatTask != null)  { heartbeatTask.cancel(false);  heartbeatTask = null; }
+        if (locationTask != null)   { locationTask.cancel(false);   locationTask = null; }
+        if (passengerTask != null)  { passengerTask.cancel(false);  passengerTask = null; }
         cancelTempTracking();
     }
 
@@ -727,6 +782,21 @@ public class TerminalSession {
     private void sendLocationSafely() {
         try { sendLocation(); } catch (RuntimeException e) {
             log.warn("terminal {} location task failed", identity.getTerminalId(), e);
+        }
+    }
+
+    private void sendPassengerTrafficSafely() {
+        try {
+            Instant now = Instant.now();
+            int hash = identity.getTerminalId().hashCode();
+            int boardings = 5 + (Math.abs(hash) & 0xF);       // 5–20
+            int alightings = 3 + (Math.abs(hash >> 4) & 0x7); // 3–10
+            write(new PassengerTrafficMessage(
+                    sequenceGenerator.next(), identity.getTerminalId(),
+                    passengerWindowStart, now, boardings, alightings));
+            passengerWindowStart = now;
+        } catch (RuntimeException e) {
+            log.warn("terminal {} passenger traffic task failed", identity.getTerminalId(), e);
         }
     }
 
@@ -768,15 +838,16 @@ public class TerminalSession {
 
     // ── Media session management ──────────────────────────────────────────────
 
-    private void startMedia(Jt1078SessionRequest request, Jt1078MediaConfig config) {
+    private Jt1078MediaSession startMedia(Jt1078SessionRequest request, Jt1078MediaConfig config) {
         int ch = request.channel();
-        if (!identity.isMediaCapable() || ch <= 0) return;
+        if (!identity.isMediaCapable() || ch <= 0) return null;
         Jt1078MediaSession existing = mediaSessions.remove(ch);
         if (existing != null) existing.stop();
         Jt1078MediaSession session = new Jt1078MediaSession(
                 eventLoopGroup, config, request, metrics, identity.getTerminalId(), ch);
         session.start();
         mediaSessions.put(ch, session);
+        return session;
     }
 
     private void stopMedia(int channelId) {
