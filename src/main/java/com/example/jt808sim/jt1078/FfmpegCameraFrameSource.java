@@ -163,42 +163,38 @@ public class FfmpegCameraFrameSource implements Jt1078FrameSource {
 
     static List<String> buildCommand(Jt1078MediaConfig.CaptureConfig capture) {
         String videoDevice = capture.videoDevice();
+        String bitrateK    = String.valueOf(Math.max(128, capture.videoBitrateKbps()));
+        String gop         = String.valueOf(Math.max(1, capture.videoFps() * 2));
+
         if (videoDevice != null && videoDevice.startsWith("lavfi:")) {
             return List.of(
-                    capture.ffmpegPath(),
-                    "-hide_banner",
-                    "-loglevel", "warning",
-                    "-f", "lavfi",
-                    "-i", videoDevice.substring("lavfi:".length()),
-                    "-an",
-                    "-c:v", "libx264",
-                    "-preset", "veryfast",
-                    "-tune", "zerolatency",
-                    "-pix_fmt", "yuv420p",
-                    "-b:v", Math.max(128, capture.videoBitrateKbps()) + "k",
-                    "-g", Integer.toString(Math.max(1, capture.videoFps() * 2)),
-                    "-keyint_min", Integer.toString(Math.max(1, capture.videoFps() * 2)),
-                    "-f", "h264",
-                    "-");
+                    capture.ffmpegPath(), "-hide_banner", "-loglevel", "warning",
+                    "-f", "lavfi", "-i", videoDevice.substring("lavfi:".length()),
+                    "-an", "-c:v", "libx264", "-preset", "veryfast",
+                    "-tune", "zerolatency", "-pix_fmt", "yuv420p",
+                    "-b:v", bitrateK + "k", "-g", gop, "-keyint_min", gop,
+                    "-f", "h264", "-");
+        }
+        if (videoDevice != null && (videoDevice.startsWith("http://") || videoDevice.startsWith("rtsp://"))) {
+            // Read from MJPEG HTTP stream (e.g. DMS sidecar /video endpoint)
+            return List.of(
+                    capture.ffmpegPath(), "-hide_banner", "-loglevel", "warning",
+                    "-i", videoDevice,
+                    "-an", "-c:v", "libx264", "-preset", "veryfast",
+                    "-tune", "zerolatency", "-pix_fmt", "yuv420p",
+                    "-b:v", bitrateK + "k", "-g", gop, "-keyint_min", gop,
+                    "-f", "h264", "-");
         }
         return List.of(
-                capture.ffmpegPath(),
-                "-hide_banner",
-                "-loglevel", "warning",
+                capture.ffmpegPath(), "-hide_banner", "-loglevel", "warning",
                 "-f", "v4l2",
-                "-framerate", Integer.toString(Math.max(1, capture.videoFps())),
+                "-framerate", String.valueOf(Math.max(1, capture.videoFps())),
                 "-video_size", capture.videoWidth() + "x" + capture.videoHeight(),
-                "-i", capture.videoDevice(),
-                "-an",
-                "-c:v", "libx264",
-                "-preset", "veryfast",
-                "-tune", "zerolatency",
-                "-pix_fmt", "yuv420p",
-                "-b:v", Math.max(128, capture.videoBitrateKbps()) + "k",
-                "-g", Integer.toString(Math.max(1, capture.videoFps() * 2)),
-                "-keyint_min", Integer.toString(Math.max(1, capture.videoFps() * 2)),
-                "-f", "h264",
-                "-");
+                "-i", videoDevice,
+                "-an", "-c:v", "libx264", "-preset", "veryfast",
+                "-tune", "zerolatency", "-pix_fmt", "yuv420p",
+                "-b:v", bitrateK + "k", "-g", gop, "-keyint_min", gop,
+                "-f", "h264", "-");
     }
 
     static boolean isKeyFrame(byte[] accessUnit) {

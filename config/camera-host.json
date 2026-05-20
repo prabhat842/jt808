@@ -22,7 +22,7 @@
     "capture": {
       "videoEnabled": true,
       "audioEnabled": true,
-      "videoDevice": "/dev/video0",
+      "videoDevice": "http://127.0.0.1:7500/video",
       "audioDevice": "hw:0,6",
       "videoWidth": 640,
       "videoHeight": 480,

@@ -35,6 +35,7 @@ from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -83,8 +84,9 @@ class DmsDetector:
         self._camera_index = camera_index
         self._seatbelt     = True
         self._closed_frames = 0
-        self._lock  = threading.Lock()
-        self._state = self._make_state(False, False, 0, False)
+        self._lock      = threading.Lock()
+        self._state     = self._make_state(False, False, 0, False)
+        self._latest_bgr = None
 
         resolved_model = model_path or str(_DEFAULT_MODEL)
         base_options = mp_python.BaseOptions(model_asset_path=resolved_model)
@@ -105,6 +107,14 @@ class DmsDetector:
     def state(self) -> dict:
         with self._lock:
             return dict(self._state)
+
+    def latest_jpeg(self) -> bytes | None:
+        with self._lock:
+            frame = self._latest_bgr
+        if frame is None:
+            return None
+        ok, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        return buf.tobytes() if ok else None
 
     def set_seatbelt(self, worn: bool):
         self._seatbelt = worn
@@ -161,6 +171,8 @@ class DmsDetector:
             cap.release()
 
     def _process(self, frame):
+        with self._lock:
+            self._latest_bgr = frame   # store for MJPEG stream
         h, w = frame.shape[:2]
         rgb      = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
@@ -229,6 +241,23 @@ def set_seatbelt(req: SeatbeltRequest):
         raise HTTPException(status_code=503, detail="detector not initialised")
     detector.set_seatbelt(req.worn)
     return {"worn": req.worn}
+
+
+@app.get("/video")
+def video_stream():
+    """MJPEG stream — lets FFmpeg read real camera frames without opening /dev/video0 directly."""
+    if detector is None:
+        raise HTTPException(status_code=503, detail="detector not initialised")
+
+    def generate():
+        boundary = b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
+        while True:
+            jpg = detector.latest_jpeg()
+            if jpg:
+                yield boundary + jpg + b"\r\n"
+            time.sleep(1 / 25)
+
+    return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 
 @app.get("/health")
