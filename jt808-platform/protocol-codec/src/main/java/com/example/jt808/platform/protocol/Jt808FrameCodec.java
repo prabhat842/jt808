@@ -135,6 +135,9 @@ public class Jt808FrameCodec {
             TerminalLocationReport location = decodeLocation(body);
             if (location != null) return location;
         }
+        if (messageId == MessageIds.JT1078_UPLOAD_AV_ATTRIBUTES && body.readableBytes() >= 9) {
+            return decodeAvAttributes(body);
+        }
         if (messageId == MessageIds.MULTIMEDIA_EVENT && body.readableBytes() >= 6) {
             return decodeMultimediaEvent(body);
         }
@@ -144,6 +147,21 @@ public class Jt808FrameCodec {
         byte[] raw = new byte[body.readableBytes()];
         body.readBytes(raw);
         return new RawBody(raw);
+    }
+
+    private AudioVideoAttributesUpload decodeAvAttributes(ByteBuf body) {
+        int audioEncoding     = body.readUnsignedByte();
+        int audioChannels     = body.readUnsignedByte();
+        int audioSampleRate   = body.readUnsignedByte();
+        int audioSampleBits   = body.readUnsignedByte();
+        int audioFrameLength  = body.readUnsignedShort();
+        boolean audioOutput   = body.readUnsignedByte() == 1;
+        int videoEncoding     = body.readUnsignedByte();
+        int maxAudioChannels  = body.readUnsignedByte();
+        int maxVideoChannels  = body.isReadable() ? body.readUnsignedByte() : 0;
+        return new AudioVideoAttributesUpload(audioEncoding, audioChannels, audioSampleRate,
+                audioSampleBits, audioFrameLength, audioOutput, videoEncoding,
+                maxAudioChannels, maxVideoChannels);
     }
 
     private MultimediaUploadBody decodeMultimediaEvent(ByteBuf body) {

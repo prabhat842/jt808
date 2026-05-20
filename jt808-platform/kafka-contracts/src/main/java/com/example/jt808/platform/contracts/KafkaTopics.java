@@ -8,6 +8,7 @@ public final class KafkaTopics {
     public static final String JT808_COMMAND = "jt808.command";
     public static final String MEDIA_SIGNAL = "media.signal";
     public static final String MEDIA_RESPONSE = "media.response";
+    public static final String TELEMETRY_SESSION = "telemetry.session";
     public static final String AI_ALERT = "ai.alert";
 
     private KafkaTopics() {

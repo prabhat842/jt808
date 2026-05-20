@@ -63,7 +63,9 @@ class ReactiveJt808TcpServer implements SmartLifecycle {
                             .asByteArray()
                             .concatMapIterable(splitter::push)
                             .concatMap(frame -> processor.process(frame, remoteAddress.get(), outboundSink));
-                    return out.sendByteArray(Flux.merge(responses, outboundSink.asFlux())).then();
+                    return out.sendByteArray(Flux.merge(responses, outboundSink.asFlux()))
+                            .then()
+                            .doFinally(signal -> processor.onDisconnect(outboundSink));
                 })
                 .bindNow();
         log.info("reactive JT808 {} gateway listening on {}:{}", role, properties.getHost(), port);

@@ -7,6 +7,8 @@ import com.example.jt808.platform.contracts.GpsTelemetryEvent;
 import com.example.jt808.platform.contracts.HeartbeatEvent;
 import com.example.jt808.platform.contracts.KafkaTopics;
 import com.example.jt808.platform.contracts.MediaSignalEvent;
+import com.example.jt808.platform.contracts.SessionEvent;
+import com.example.jt808.platform.protocol.AudioVideoAttributesUpload;
 import com.example.jt808.platform.protocol.AuthenticationBody;
 import com.example.jt808.platform.protocol.DecodedJt808Message;
 import com.example.jt808.platform.protocol.Jt808FrameCodec;
@@ -35,16 +37,20 @@ class Jt808MessageProcessor {
     private final GatewaySessionStore sessions;
     private final ActiveConnectionRegistry connections;
     private final EventPublisher events;
+    private final GatewayRtvsStore rtvsStore;
     private final SequenceGenerator sequenceGenerator = new SequenceGenerator();
     // tracks last known alarm word per terminal to detect bit transitions
     private final ConcurrentHashMap<String, Long> lastAlarmWord = new ConcurrentHashMap<>();
 
-    Jt808MessageProcessor(Jt808FrameCodec codec, GatewayProperties properties, GatewaySessionStore sessions, ActiveConnectionRegistry connections, EventPublisher events) {
+    Jt808MessageProcessor(Jt808FrameCodec codec, GatewayProperties properties,
+                           GatewaySessionStore sessions, ActiveConnectionRegistry connections,
+                           EventPublisher events, GatewayRtvsStore rtvsStore) {
         this.codec = codec;
         this.properties = properties;
         this.sessions = sessions;
         this.connections = connections;
         this.events = events;
+        this.rtvsStore = rtvsStore;
     }
 
     Mono<byte[]> process(byte[] frame, String remoteAddress, reactor.core.publisher.Sinks.Many<byte[]> outbound) {
@@ -77,6 +83,10 @@ class Jt808MessageProcessor {
         if (messageId == MessageIds.TERMINAL_GENERAL_RESPONSE && message.body() instanceof TerminalGeneralResponse response) {
             return handleTerminalResponse(message, terminalId, response);
         }
+        if (messageId == MessageIds.JT1078_UPLOAD_AV_ATTRIBUTES
+                && message.body() instanceof AudioVideoAttributesUpload attrs) {
+            return handleAvAttributes(terminalId, attrs).thenReturn(ack(message, 0));
+        }
         if (messageId == MessageIds.MULTIMEDIA_EVENT
                 && message.body() instanceof MultimediaUploadBody upload) {
             return handleMultimediaUpload(message, terminalId, upload);
@@ -91,23 +101,35 @@ class Jt808MessageProcessor {
         return Mono.just(ack(message, 0));
     }
 
-    private Mono<byte[]> handleRegistration(DecodedJt808Message message, String remoteAddress, String terminalId, reactor.core.publisher.Sinks.Many<byte[]> outbound) {
-        Mono<Void> publish = Mono.empty();
+    private Mono<byte[]> handleRegistration(DecodedJt808Message message, String remoteAddress,
+                                             String terminalId, reactor.core.publisher.Sinks.Many<byte[]> outbound) {
+        Instant now = Instant.now();
+        SessionEvent onlineEvent = new SessionEvent(terminalId, terminalId, "ONLINE", remoteAddress, now);
+        Mono<Void> publish = events.publish(KafkaTopics.TELEMETRY_SESSION, terminalId, onlineEvent)
+                .then(events.publish(KafkaTopics.TELEMETRY_HEARTBEAT, terminalId,
+                        new HeartbeatEvent(terminalId, terminalId, message.header().sequence(), remoteAddress, now)));
+        Mono<Void> identity = Mono.empty();
         if (message.body() instanceof TerminalRegistration registration) {
-            publish = events.publish(KafkaTopics.TELEMETRY_HEARTBEAT, terminalId, new HeartbeatEvent(terminalId, terminalId, message.header().sequence(), remoteAddress, Instant.now()))
-                    .doOnSuccess(ignored -> log.info("registered terminal {} plate={} color={}", terminalId, registration.plateNumber(), registration.plateColor()));
+            log.info("registered terminal {} plate={} color={}", terminalId, registration.plateNumber(), registration.plateColor());
+            identity = sessions.storeIdentity(terminalId, registration)
+                    .then(rtvsStore.writeSimConfig(terminalId, registration));
         }
-        byte[] response = codec.registrationResponse(terminalId, sequenceGenerator.next(), message.header().sequence(), 0, properties.getAuthCode());
+        byte[] response = codec.registrationResponse(terminalId, sequenceGenerator.next(),
+                message.header().sequence(), 0, properties.getAuthCode());
         connections.register(terminalId, outbound);
-        return sessions.register(terminalId, remoteAddress).then(publish).thenReturn(response);
+        return sessions.register(terminalId, remoteAddress).then(identity).then(publish).thenReturn(response);
     }
 
-    private Mono<byte[]> handleAuthentication(DecodedJt808Message message, String terminalId, reactor.core.publisher.Sinks.Many<byte[]> outbound) {
+    private Mono<byte[]> handleAuthentication(DecodedJt808Message message, String terminalId,
+                                               reactor.core.publisher.Sinks.Many<byte[]> outbound) {
         if (message.body() instanceof AuthenticationBody auth) {
             log.debug("terminal {} authenticated with token length {}", terminalId, auth.token().length());
         }
         connections.register(terminalId, outbound);
-        return sessions.authenticate(terminalId).thenReturn(ack(message, 0));
+        SessionEvent authEvent = new SessionEvent(terminalId, terminalId, "AUTHENTICATED", "", Instant.now());
+        return sessions.authenticate(terminalId)
+                .then(events.publish(KafkaTopics.TELEMETRY_SESSION, terminalId, authEvent))
+                .thenReturn(ack(message, 0));
     }
 
     private Mono<byte[]> handleHeartbeat(DecodedJt808Message message, String remoteAddress, String terminalId) {
@@ -202,6 +224,22 @@ class Jt808MessageProcessor {
                 loc.memoryFailMask(),
                 loc.abnormalDrivingBehavior(),
                 loc.fatigueDegree());
+    }
+
+    private Mono<Void> handleAvAttributes(String terminalId, AudioVideoAttributesUpload attrs) {
+        log.debug("terminal {} AV attributes: audioEncoding={} videoEncoding={} maxVideoChannels={}",
+                terminalId, attrs.audioEncoding(), attrs.videoEncoding(), attrs.maxVideoChannels());
+        return rtvsStore.writeAvParameters(terminalId, attrs);
+    }
+
+    void onDisconnect(reactor.core.publisher.Sinks.Many<byte[]> outbound) {
+        String terminalId = connections.resolveAndRemove(outbound);
+        if (terminalId == null) return;
+        log.info("terminal {} disconnected", terminalId);
+        SessionEvent offlineEvent = new SessionEvent(terminalId, terminalId, "OFFLINE", "", Instant.now());
+        sessions.remove(terminalId)
+                .then(events.publish(KafkaTopics.TELEMETRY_SESSION, terminalId, offlineEvent))
+                .subscribe();
     }
 
     private Mono<byte[]> handleMultimediaUpload(DecodedJt808Message message, String terminalId, MultimediaUploadBody upload) {

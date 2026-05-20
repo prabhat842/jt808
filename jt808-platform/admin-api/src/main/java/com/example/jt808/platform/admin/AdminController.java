@@ -1,5 +1,6 @@
 package com.example.jt808.platform.admin;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -11,9 +12,10 @@ import java.util.Map;
 @RestController
 class AdminController {
     private final AdminProperties properties;
-    private final org.springframework.beans.factory.ObjectProvider<ReactiveStringRedisTemplate> redisProvider;
+    private final ObjectProvider<ReactiveStringRedisTemplate> redisProvider;
 
-    AdminController(AdminProperties properties, org.springframework.beans.factory.ObjectProvider<ReactiveStringRedisTemplate> redisProvider) {
+    AdminController(AdminProperties properties,
+                    ObjectProvider<ReactiveStringRedisTemplate> redisProvider) {
         this.properties = properties;
         this.redisProvider = redisProvider;
     }
@@ -33,9 +35,12 @@ class AdminController {
         if (!properties.isRedisEnabled() || redis == null) {
             return Mono.just(Map.of("terminalId", terminalId, "available", false, "reason", "redis disabled"));
         }
-        return redis.opsForValue()
-                .get("jt808:session:" + terminalId)
-                .map(value -> Map.<String, Object>of("terminalId", terminalId, "available", true, "session", value))
-                .defaultIfEmpty(Map.of("terminalId", terminalId, "available", false));
+        // Session is stored as a Redis Hash (HSET fields) — collect all field→value pairs
+        return redis.<String, String>opsForHash()
+                .entries("jt808:session:" + terminalId)
+                .collectMap(Map.Entry::getKey, Map.Entry::getValue)
+                .map(fields -> fields.isEmpty()
+                        ? Map.<String, Object>of("terminalId", terminalId, "available", false)
+                        : Map.<String, Object>of("terminalId", terminalId, "available", true, "session", fields));
     }
 }

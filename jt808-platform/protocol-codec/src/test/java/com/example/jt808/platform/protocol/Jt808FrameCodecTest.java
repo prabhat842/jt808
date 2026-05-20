@@ -46,6 +46,35 @@ class Jt808FrameCodecTest {
         assertEquals(0x7E, frame[frame.length - 1] & 0xFF);
     }
 
+    // ── AV attributes upload (0x1003) ────────────────────────────────────────
+
+    @Test
+    void decodesAvAttributesUpload() {
+        ByteBuf body = Unpooled.buffer();
+        body.writeByte(7);    // audioEncoding = G.711U
+        body.writeByte(1);    // audioChannels
+        body.writeByte(0);    // audioSampleRate = 8kHz
+        body.writeByte(0);    // audioSampleBits = 8bit
+        body.writeShort(160); // audioFrameLength
+        body.writeByte(1);    // audioOutputSupported = true
+        body.writeByte(98);   // videoEncoding = H.264
+        body.writeByte(2);    // maxAudioChannels
+        body.writeByte(4);    // maxVideoChannels
+
+        DecodedJt808Message msg = codec.decode(
+                frame(MessageIds.JT1078_UPLOAD_AV_ATTRIBUTES, "00000000000000000001", 9, body));
+        AudioVideoAttributesUpload attrs = assertInstanceOf(AudioVideoAttributesUpload.class, msg.body());
+
+        assertEquals(7,   attrs.audioEncoding());
+        assertEquals(1,   attrs.audioChannels());
+        assertEquals(0,   attrs.audioSampleRate());
+        assertEquals(160, attrs.audioFrameLength());
+        assertTrue(attrs.audioOutputSupported());
+        assertEquals(98,  attrs.videoEncoding());
+        assertEquals(2,   attrs.maxAudioChannels());
+        assertEquals(4,   attrs.maxVideoChannels());
+    }
+
     // ── Video alarm additional info (0x14–0x18) ───────────────────────────────
 
     @Test
