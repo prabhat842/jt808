@@ -34,6 +34,21 @@ import com.example.jt808sim.protocol.inbound.TerminalControl;
 import com.example.jt808sim.protocol.inbound.TerminalParamQueryAll;
 import com.example.jt808sim.protocol.inbound.TerminalParamQuerySpec;
 import com.example.jt808sim.protocol.inbound.TerminalUpdate;
+import com.example.jt808sim.protocol.inbound.CallbackCommand;
+import com.example.jt808sim.protocol.inbound.CameraSnapshotCommand;
+import com.example.jt808sim.protocol.inbound.EventSetting;
+import com.example.jt808sim.protocol.inbound.InfoOnDemandMenuSetting;
+import com.example.jt808sim.protocol.inbound.InfoService;
+import com.example.jt808sim.protocol.inbound.MultimediaUploadAck;
+import com.example.jt808sim.protocol.inbound.PhoneBookSetting;
+import com.example.jt808sim.protocol.inbound.QuestionSend;
+import com.example.jt808sim.protocol.inbound.SingleMediaUploadCmd;
+import com.example.jt808sim.protocol.inbound.SoundRecordCmd;
+import com.example.jt808sim.protocol.inbound.StoreMediaQuery;
+import com.example.jt808sim.protocol.inbound.StoreMediaUploadCmd;
+import com.example.jt808sim.protocol.inbound.TextInfo;
+import com.example.jt808sim.protocol.inbound.TachographDataCmd;
+import com.example.jt808sim.protocol.inbound.DriverIdentityAck;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
@@ -197,6 +212,101 @@ public class Jt808MessageDecoder extends ByteToMessageDecoder {
         }
         if (messageId == MessageIds.DELETE_ROUTE && body.isReadable()) {
             return decodeDeleteRoute(body);
+        }
+        // ── Phase 6: tachograph & driver identity ─────────────────────────────
+        if (messageId == MessageIds.TACHOGRAPH_CMD && body.readableBytes() >= 2) {
+            int commandType = body.readUnsignedShort();
+            byte[] data = new byte[body.readableBytes()];
+            body.readBytes(data);
+            return new TachographDataCmd(commandType, data);
+        }
+        if (messageId == MessageIds.DRIVER_IDENTITY_ACK && body.readableBytes() >= 8) {
+            int serial = body.readUnsignedShort();
+            // Platform timestamp: 6-byte BCD YYMMDDHHmmss → Instant
+            Instant platformTime = readBcdAreaTime(body); // reuses same BCD reader
+            if (platformTime == null) platformTime = Instant.now();
+            return new DriverIdentityAck(serial, platformTime);
+        }
+        // ── Phase 5: information protocol & multimedia ────────────────────────
+        if (messageId == MessageIds.TEXT_INFO && body.readableBytes() >= 2) {
+            int sign = body.readUnsignedByte();
+            String text = body.isReadable() ? body.toString(Jt808CodecSupport.GBK) : "";
+            return new TextInfo(sign, text);
+        }
+        if (messageId == MessageIds.EVENT_SETTING && body.isReadable()) {
+            return decodeEventSetting(body);
+        }
+        if (messageId == MessageIds.QUESTION_SEND && body.isReadable()) {
+            return decodeQuestionSend(body);
+        }
+        if (messageId == MessageIds.INFO_ON_DEMAND_MENU && body.isReadable()) {
+            return decodeInfoOnDemandMenu(body);
+        }
+        if (messageId == MessageIds.INFO_SERVICE && body.readableBytes() >= 2) {
+            int infoType = body.readUnsignedByte();
+            String content = body.isReadable() ? body.toString(Jt808CodecSupport.GBK) : "";
+            return new InfoService(infoType, content);
+        }
+        if (messageId == MessageIds.CALLBACK && body.isReadable()) {
+            int sign = body.readUnsignedByte();
+            String phone = body.isReadable() ? body.toString(Jt808CodecSupport.GBK) : "";
+            return new CallbackCommand(sign, phone);
+        }
+        if (messageId == MessageIds.PHONE_BOOK_SETTING && body.isReadable()) {
+            return decodePhoneBookSetting(body);
+        }
+        if (messageId == MessageIds.MULTIMEDIA_UPLOAD_ACK && body.readableBytes() >= 5) {
+            long mediaId = body.readUnsignedInt();
+            int packetCount = body.readUnsignedByte();
+            List<Integer> resend = new ArrayList<>(packetCount);
+            for (int i = 0; i < packetCount && body.readableBytes() >= 2; i++) {
+                resend.add(body.readUnsignedShort());
+            }
+            return new MultimediaUploadAck(mediaId, resend);
+        }
+        if (messageId == MessageIds.CAMERA_SNAPSHOT_CMD && body.readableBytes() >= 11) {
+            int channelId       = body.readUnsignedByte();
+            int takenCommand    = body.readUnsignedShort();
+            int intervalSeconds = body.readUnsignedShort();
+            int savingSign      = body.readUnsignedByte();
+            int resolution      = body.readUnsignedByte();
+            int quality         = body.readUnsignedByte();
+            int brightness      = body.readUnsignedByte();
+            int contrast        = body.readUnsignedByte();
+            int saturation      = body.readUnsignedByte();
+            int chroma          = body.readUnsignedByte();
+            return new CameraSnapshotCommand(channelId, takenCommand, intervalSeconds,
+                    savingSign, resolution, quality, brightness, contrast, saturation, chroma);
+        }
+        if (messageId == MessageIds.STORE_MEDIA_QUERY && body.readableBytes() >= 15) {
+            int mediaType = body.readUnsignedByte();
+            int channelId = body.readUnsignedByte();
+            int eventCode = body.readUnsignedByte();
+            Instant startTime = readBcdAreaTime(body);
+            Instant endTime   = readBcdAreaTime(body);
+            return new StoreMediaQuery(mediaType, channelId, eventCode, startTime, endTime);
+        }
+        if (messageId == MessageIds.STORE_MEDIA_UPLOAD_CMD && body.readableBytes() >= 16) {
+            int mediaType          = body.readUnsignedByte();
+            int channelId          = body.readUnsignedByte();
+            int eventCode          = body.readUnsignedByte();
+            Instant startTime      = readBcdAreaTime(body);
+            Instant endTime        = readBcdAreaTime(body);
+            int deleteAfterUpload  = body.isReadable() ? body.readUnsignedByte() : 0;
+            return new StoreMediaUploadCmd(mediaType, channelId, eventCode,
+                    startTime, endTime, deleteAfterUpload);
+        }
+        if (messageId == MessageIds.SOUND_RECORD_CMD && body.readableBytes() >= 4) {
+            int command       = body.readUnsignedByte();
+            int recordSeconds = body.readUnsignedShort();
+            int storeSign     = body.readUnsignedByte();
+            int samplingRate  = body.isReadable() ? body.readUnsignedByte() : 0;
+            return new SoundRecordCmd(command, recordSeconds, storeSign, samplingRate);
+        }
+        if (messageId == MessageIds.SINGLE_MEDIA_UPLOAD_CMD && body.readableBytes() >= 5) {
+            long mediaId  = body.readUnsignedInt();
+            int deleteSign = body.isReadable() ? body.readUnsignedByte() : 0;
+            return new SingleMediaUploadCmd(mediaId, deleteSign);
         }
         // ── JT1078 signaling ──────────────────────────────────────────────────
         Object jt1078Command = Jt1078CommandDecoder.decode(messageId, body);
@@ -460,5 +570,75 @@ public class Jt808MessageDecoder extends ByteToMessageDecoder {
     // Negates value when hemisphere flag is true (south lat / west lon)
     private static double applyHemisphere(double value, boolean negate) {
         return negate ? -value : value;
+    }
+
+    // ── Phase 5 helper decoders ───────────────────────────────────────────────
+
+    private static EventSetting decodeEventSetting(ByteBuf body) {
+        int settingType = body.readUnsignedByte();
+        int count = body.isReadable() ? body.readUnsignedByte() : 0;
+        List<EventSetting.EventItem> items = new ArrayList<>(count);
+        for (int i = 0; i < count && body.isReadable(); i++) {
+            int eventId = body.readUnsignedByte();
+            int len = body.isReadable() ? body.readUnsignedByte() : 0;
+            String content = body.readableBytes() >= len
+                    ? body.toString(body.readerIndex(), len, Jt808CodecSupport.GBK) : "";
+            body.skipBytes(Math.min(len, body.readableBytes()));
+            items.add(new EventSetting.EventItem(eventId, content));
+        }
+        return new EventSetting(settingType, items);
+    }
+
+    private static QuestionSend decodeQuestionSend(ByteBuf body) {
+        int sign = body.readUnsignedByte();
+        int questionLen = body.isReadable() ? body.readUnsignedByte() : 0;
+        String question = body.readableBytes() >= questionLen
+                ? body.toString(body.readerIndex(), questionLen, Jt808CodecSupport.GBK) : "";
+        body.skipBytes(Math.min(questionLen, body.readableBytes()));
+        int answerCount = body.isReadable() ? body.readUnsignedByte() : 0;
+        List<QuestionSend.AnswerItem> answers = new ArrayList<>(answerCount);
+        for (int i = 0; i < answerCount && body.isReadable(); i++) {
+            int answerId = body.readUnsignedByte();
+            int len = body.isReadable() ? body.readUnsignedByte() : 0;
+            String content = body.readableBytes() >= len
+                    ? body.toString(body.readerIndex(), len, Jt808CodecSupport.GBK) : "";
+            body.skipBytes(Math.min(len, body.readableBytes()));
+            answers.add(new QuestionSend.AnswerItem(answerId, content));
+        }
+        return new QuestionSend(sign, question, answers);
+    }
+
+    private static InfoOnDemandMenuSetting decodeInfoOnDemandMenu(ByteBuf body) {
+        int settingType = body.readUnsignedByte();
+        int count = body.isReadable() ? body.readUnsignedByte() : 0;
+        List<InfoOnDemandMenuSetting.InfoMenuItem> items = new ArrayList<>(count);
+        for (int i = 0; i < count && body.isReadable(); i++) {
+            int infoType = body.readUnsignedByte();
+            int len = body.readableBytes() >= 2 ? body.readUnsignedShort() : 0;
+            String name = body.readableBytes() >= len
+                    ? body.toString(body.readerIndex(), len, Jt808CodecSupport.GBK) : "";
+            body.skipBytes(Math.min(len, body.readableBytes()));
+            items.add(new InfoOnDemandMenuSetting.InfoMenuItem(infoType, name));
+        }
+        return new InfoOnDemandMenuSetting(settingType, items);
+    }
+
+    private static PhoneBookSetting decodePhoneBookSetting(ByteBuf body) {
+        int settingType = body.readUnsignedByte();
+        int count = body.isReadable() ? body.readUnsignedByte() : 0;
+        List<PhoneBookSetting.ContactItem> contacts = new ArrayList<>(count);
+        for (int i = 0; i < count && body.isReadable(); i++) {
+            int sign = body.readUnsignedByte();
+            int phoneLen = body.isReadable() ? body.readUnsignedByte() : 0;
+            String phone = body.readableBytes() >= phoneLen
+                    ? body.toString(body.readerIndex(), phoneLen, Jt808CodecSupport.GBK) : "";
+            body.skipBytes(Math.min(phoneLen, body.readableBytes()));
+            int nameLen = body.isReadable() ? body.readUnsignedByte() : 0;
+            String name = body.readableBytes() >= nameLen
+                    ? body.toString(body.readerIndex(), nameLen, Jt808CodecSupport.GBK) : "";
+            body.skipBytes(Math.min(nameLen, body.readableBytes()));
+            contacts.add(new PhoneBookSetting.ContactItem(sign, phone, name));
+        }
+        return new PhoneBookSetting(settingType, contacts);
     }
 }

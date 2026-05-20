@@ -26,6 +26,42 @@ public final class MessageIds {
     public static final int LOCATION_QUERY             = 0x8201;
     public static final int TEMP_LOCATION_TRACKING     = 0x8202;
     public static final int MANUAL_ALARM_CONFIRM       = 0x8203;
+    // Information protocol — terminal → platform (§8.25, 8.27, 8.29)
+    public static final int EVENT_REPORT            = 0x0301;
+    public static final int QUESTION_RESPONSE       = 0x0302;
+    public static final int INFO_ON_DEMAND          = 0x0303;
+    // Multimedia — terminal → platform (§8.51-8.57)
+    public static final int MULTIMEDIA_EVENT        = 0x0800;
+    public static final int MULTIMEDIA_DATA_UPLOAD  = 0x0801;
+    public static final int STORE_MEDIA_RETRIEVE_RESP = 0x0802;
+    public static final int CAMERA_SNAPSHOT_RESP    = 0x0805;
+
+    // Information protocol — platform → terminal (§8.23-8.30)
+    public static final int TEXT_INFO               = 0x8300;
+    public static final int EVENT_SETTING           = 0x8301;
+    public static final int QUESTION_SEND           = 0x8302;
+    public static final int INFO_ON_DEMAND_MENU     = 0x8303;
+    public static final int INFO_SERVICE            = 0x8304;
+    // Telephone protocol (§8.31-8.32)
+    public static final int CALLBACK                = 0x8400;
+    public static final int PHONE_BOOK_SETTING      = 0x8401;
+    // Multimedia — platform → terminal (§8.53-8.60)
+    public static final int MULTIMEDIA_UPLOAD_ACK   = 0x8800;
+    public static final int CAMERA_SNAPSHOT_CMD     = 0x8801;
+    public static final int STORE_MEDIA_QUERY       = 0x8802;
+    public static final int STORE_MEDIA_UPLOAD_CMD  = 0x8803;
+    public static final int SOUND_RECORD_CMD        = 0x8804;
+    public static final int SINGLE_MEDIA_UPLOAD_CMD = 0x8805;
+
+    // Tachograph & driver identity (§8.43-8.50)
+    public static final int TACHOGRAPH_DATA_UPLOAD  = 0x0700;
+    public static final int DRIVER_IC_CARD_DATA     = 0x0701;
+    public static final int DRIVER_IDENTITY_REPORT  = 0x0702;
+    public static final int BULK_LOCATION_UPLOAD    = 0x0704;
+    public static final int ACCIDENT_SUSPECT_REPORT = 0x0705;
+    public static final int TACHOGRAPH_CMD          = 0x8700; // platform → terminal
+    public static final int DRIVER_IDENTITY_ACK     = 0x8702; // platform → terminal
+
     // Vehicle control (§8.33-8.34)
     public static final int VEHICLE_CONTROL            = 0x8500;
     public static final int VEHICLE_CONTROL_RESP       = 0x0500;

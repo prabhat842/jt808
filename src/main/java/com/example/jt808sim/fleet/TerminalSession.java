@@ -40,6 +40,32 @@ import com.example.jt808sim.protocol.inbound.TerminalControl;
 import com.example.jt808sim.protocol.inbound.TerminalParamQueryAll;
 import com.example.jt808sim.protocol.inbound.TerminalParamQuerySpec;
 import com.example.jt808sim.protocol.inbound.TerminalUpdate;
+import com.example.jt808sim.protocol.inbound.CallbackCommand;
+import com.example.jt808sim.protocol.inbound.CameraSnapshotCommand;
+import com.example.jt808sim.protocol.inbound.EventSetting;
+import com.example.jt808sim.protocol.inbound.InfoOnDemandMenuSetting;
+import com.example.jt808sim.protocol.inbound.InfoService;
+import com.example.jt808sim.protocol.inbound.MultimediaUploadAck;
+import com.example.jt808sim.protocol.inbound.PhoneBookSetting;
+import com.example.jt808sim.protocol.inbound.QuestionSend;
+import com.example.jt808sim.protocol.inbound.SingleMediaUploadCmd;
+import com.example.jt808sim.protocol.inbound.SoundRecordCmd;
+import com.example.jt808sim.protocol.inbound.StoreMediaQuery;
+import com.example.jt808sim.protocol.inbound.StoreMediaUploadCmd;
+import com.example.jt808sim.protocol.inbound.TextInfo;
+import com.example.jt808sim.protocol.inbound.TachographDataCmd;
+import com.example.jt808sim.protocol.inbound.DriverIdentityAck;
+import com.example.jt808sim.protocol.messages.AccidentSuspectReportMessage;
+import com.example.jt808sim.protocol.messages.BulkLocationUploadMessage;
+import com.example.jt808sim.protocol.messages.DriverIcCardDataMessage;
+import com.example.jt808sim.protocol.messages.DriverIdentityReportMessage;
+import com.example.jt808sim.protocol.messages.TachographDataUploadMessage;
+import com.example.jt808sim.protocol.messages.CameraSnapshotRespMessage;
+import com.example.jt808sim.protocol.messages.EventReportMessage;
+import com.example.jt808sim.protocol.messages.MultimediaDataUploadMessage;
+import com.example.jt808sim.protocol.messages.MultimediaEventMessage;
+import com.example.jt808sim.protocol.messages.QuestionResponseMessage;
+import com.example.jt808sim.protocol.messages.StoreMediaRetrieveRespMessage;
 import com.example.jt808sim.protocol.messages.AuthenticationMessage;
 import com.example.jt808sim.protocol.messages.HeartbeatMessage;
 import com.example.jt808sim.protocol.messages.LocationQueryResponseMessage;
@@ -60,6 +86,7 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -88,6 +115,7 @@ public class TerminalSession {
     private final AtomicReference<TerminalState> state = new AtomicReference<>(TerminalState.DISCONNECTED);
     private final Jt1078MediaConfig mediaConfig;
     private final TerminalMediaCatalog mediaCatalog;
+    private final Jt808MultimediaStore multimediaStore = new Jt808MultimediaStore();
 
     private Channel channel;
     private ScheduledFuture<?> heartbeatTask;
@@ -194,6 +222,32 @@ public class TerminalSession {
             handleDeleteArea(message, cmd, message.header().messageId());
         } else if (message.body() instanceof DeleteRoute cmd) {
             handleDeleteRoute(message, cmd);
+        } else if (message.body() instanceof TextInfo info) {
+            handleTextInfo(message, info);
+        } else if (message.body() instanceof EventSetting setting) {
+            handleEventSetting(message, setting);
+        } else if (message.body() instanceof QuestionSend question) {
+            handleQuestionSend(message, question);
+        } else if (message.body() instanceof InfoOnDemandMenuSetting menu) {
+            handleInfoOnDemandMenu(message, menu);
+        } else if (message.body() instanceof InfoService service) {
+            handleInfoService(message, service);
+        } else if (message.body() instanceof CallbackCommand callback) {
+            handleCallback(message, callback);
+        } else if (message.body() instanceof PhoneBookSetting phonebook) {
+            handlePhoneBookSetting(message, phonebook);
+        } else if (message.body() instanceof MultimediaUploadAck ack) {
+            handleMultimediaUploadAck(ack);
+        } else if (message.body() instanceof CameraSnapshotCommand cmd) {
+            handleCameraSnapshot(message, cmd);
+        } else if (message.body() instanceof StoreMediaQuery query) {
+            handleStoreMediaQuery(message, query);
+        } else if (message.body() instanceof StoreMediaUploadCmd cmd) {
+            handleStoreMediaUpload(message, cmd);
+        } else if (message.body() instanceof SoundRecordCmd cmd) {
+            handleSoundRecord(message, cmd);
+        } else if (message.body() instanceof SingleMediaUploadCmd cmd) {
+            handleSingleMediaUpload(message, cmd);
         } else if (message.body() instanceof Jt1078Command command) {
             handleJt1078Command(message, command);
         }
@@ -364,6 +418,157 @@ public class TerminalSession {
                 message.header().sequence(),
                 snapshot.coordinate(), snapshot.speedKph(), snapshot.heading(),
                 Instant.now(), vehicleState));
+    }
+
+    // ── Phase 5: information protocol & multimedia ────────────────────────────
+
+    private void handleTextInfo(Jt808Message message, TextInfo info) {
+        ack(message, MessageIds.TEXT_INFO, TerminalGeneralResponseMessage.RESULT_SUCCESS);
+        log.info("terminal {} text info sign=0x{} text='{}'",
+                identity.getTerminalId(), Integer.toHexString(info.sign()), info.text());
+    }
+
+    private void handleEventSetting(Jt808Message message, EventSetting setting) {
+        ack(message, MessageIds.EVENT_SETTING, TerminalGeneralResponseMessage.RESULT_SUCCESS);
+        log.debug("terminal {} event setting type={} count={}",
+                identity.getTerminalId(), setting.settingType(), setting.items().size());
+        // Fire 0x0301 event report for each active event
+        for (EventSetting.EventItem item : setting.items()) {
+            write(new EventReportMessage(sequenceGenerator.next(), identity.getTerminalId(), item.eventId()));
+        }
+    }
+
+    private void handleQuestionSend(Jt808Message message, QuestionSend question) {
+        ack(message, MessageIds.QUESTION_SEND, TerminalGeneralResponseMessage.RESULT_SUCCESS);
+        int answerId = question.firstAnswerId();
+        if (answerId < 0) return;
+        // Simulate driver picking the first answer after a 2-second delay
+        int responseSerial = message.header().sequence();
+        channel.eventLoop().schedule(() -> {
+            if (channel != null && channel.isActive()) {
+                write(new QuestionResponseMessage(
+                        sequenceGenerator.next(), identity.getTerminalId(), responseSerial, answerId));
+            }
+        }, 2, TimeUnit.SECONDS);
+    }
+
+    private void handleInfoOnDemandMenu(Jt808Message message, InfoOnDemandMenuSetting menu) {
+        ack(message, MessageIds.INFO_ON_DEMAND_MENU, TerminalGeneralResponseMessage.RESULT_SUCCESS);
+        log.debug("terminal {} info-on-demand menu type={} items={}",
+                identity.getTerminalId(), menu.settingType(), menu.items().size());
+    }
+
+    private void handleInfoService(Jt808Message message, InfoService service) {
+        ack(message, MessageIds.INFO_SERVICE, TerminalGeneralResponseMessage.RESULT_SUCCESS);
+        log.info("terminal {} info service type={} content='{}'",
+                identity.getTerminalId(), service.infoType(), service.content());
+    }
+
+    private void handleCallback(Jt808Message message, CallbackCommand callback) {
+        ack(message, MessageIds.CALLBACK, TerminalGeneralResponseMessage.RESULT_SUCCESS);
+        log.info("terminal {} callback sign={} phone='{}'",
+                identity.getTerminalId(), callback.sign(), callback.phoneNumber());
+    }
+
+    private void handlePhoneBookSetting(Jt808Message message, PhoneBookSetting phonebook) {
+        ack(message, MessageIds.PHONE_BOOK_SETTING, TerminalGeneralResponseMessage.RESULT_SUCCESS);
+        log.debug("terminal {} phone book setting type={} contacts={}",
+                identity.getTerminalId(), phonebook.settingType(), phonebook.contacts().size());
+    }
+
+    private void handleMultimediaUploadAck(MultimediaUploadAck ack) {
+        if (ack.isComplete()) {
+            log.debug("terminal {} multimedia {} upload complete", identity.getTerminalId(), ack.multimediaId());
+            multimediaStore.remove(ack.multimediaId());
+        } else {
+            log.debug("terminal {} multimedia {} upload partial, {} packets to resend",
+                    identity.getTerminalId(), ack.multimediaId(), ack.resendPacketIds().size());
+        }
+    }
+
+    private void handleCameraSnapshot(Jt808Message message, CameraSnapshotCommand cmd) {
+        TrajectoryEngine.Snapshot snapshot = trajectoryEngine.snapshot(Instant.now());
+        int count = cmd.photoCount();
+        // Store locally or prepare for real-time upload
+        List<Long> mediaIds = multimediaStore.addSnapshots(
+                count, cmd.channelId(), 0, snapshot.coordinate(), snapshot.speedKph());
+
+        // 0x0805: camera snapshot response (success + media IDs)
+        write(new CameraSnapshotRespMessage(
+                sequenceGenerator.next(), identity.getTerminalId(),
+                message.header().sequence(), 0, mediaIds));
+
+        // 0x0800 + 0x0801: fire event notification then upload each item
+        for (long mediaId : mediaIds) {
+            Jt808MultimediaStore.MultimediaItem item = multimediaStore.get(mediaId);
+            if (item == null) continue;
+            write(new MultimediaEventMessage(
+                    sequenceGenerator.next(), identity.getTerminalId(),
+                    mediaId, item.mediaType(), item.formatCode(), item.eventCode(), item.channelId()));
+            if (cmd.realtimeUpload()) {
+                write(new MultimediaDataUploadMessage(
+                        sequenceGenerator.next(), identity.getTerminalId(),
+                        mediaId, item.mediaType(), item.formatCode(), item.eventCode(), item.channelId(),
+                        item.capturePosition(), item.captureSpeedKph(), 0,
+                        item.captureTime(), vehicleState, item.syntheticPayload()));
+            }
+        }
+    }
+
+    private void handleStoreMediaQuery(Jt808Message message, StoreMediaQuery query) {
+        java.util.List<Jt808MultimediaStore.MultimediaItem> results = multimediaStore.query(
+                query.mediaType(), query.channelId(), query.eventCode(),
+                query.startTime(), query.endTime());
+        write(new StoreMediaRetrieveRespMessage(
+                sequenceGenerator.next(), identity.getTerminalId(),
+                message.header().sequence(), results, vehicleState));
+    }
+
+    private void handleStoreMediaUpload(Jt808Message message, StoreMediaUploadCmd cmd) {
+        ack(message, MessageIds.STORE_MEDIA_UPLOAD_CMD, TerminalGeneralResponseMessage.RESULT_SUCCESS);
+        java.util.List<Jt808MultimediaStore.MultimediaItem> items = multimediaStore.query(
+                cmd.mediaType(), cmd.channelId(), cmd.eventCode(), cmd.startTime(), cmd.endTime());
+        for (Jt808MultimediaStore.MultimediaItem item : items) {
+            write(new MultimediaDataUploadMessage(
+                    sequenceGenerator.next(), identity.getTerminalId(),
+                    item.multimediaId(), item.mediaType(), item.formatCode(),
+                    item.eventCode(), item.channelId(),
+                    item.capturePosition(), item.captureSpeedKph(), 0,
+                    item.captureTime(), vehicleState, item.syntheticPayload()));
+            if (cmd.deleteAfterUpload() == 1) {
+                multimediaStore.remove(item.multimediaId());
+            }
+        }
+    }
+
+    private void handleSoundRecord(Jt808Message message, SoundRecordCmd cmd) {
+        ack(message, MessageIds.SOUND_RECORD_CMD, TerminalGeneralResponseMessage.RESULT_SUCCESS);
+        log.info("terminal {} sound record command={} seconds={} store={} rate={}",
+                identity.getTerminalId(), cmd.command(), cmd.recordSeconds(),
+                cmd.storeSign(), cmd.samplingRate());
+        if (cmd.command() == 1 && cmd.storeSign() == 1) {
+            // Store a synthetic audio clip
+            TrajectoryEngine.Snapshot snapshot = trajectoryEngine.snapshot(Instant.now());
+            multimediaStore.add(1, 3, 0, 1, snapshot.coordinate(), snapshot.speedKph()); // 1=audio, 3=WAV
+        }
+    }
+
+    private void handleSingleMediaUpload(Jt808Message message, SingleMediaUploadCmd cmd) {
+        ack(message, MessageIds.SINGLE_MEDIA_UPLOAD_CMD, TerminalGeneralResponseMessage.RESULT_SUCCESS);
+        Jt808MultimediaStore.MultimediaItem item = multimediaStore.get(cmd.multimediaId());
+        if (item == null) {
+            log.debug("terminal {} single upload: media {} not found", identity.getTerminalId(), cmd.multimediaId());
+            return;
+        }
+        write(new MultimediaDataUploadMessage(
+                sequenceGenerator.next(), identity.getTerminalId(),
+                item.multimediaId(), item.mediaType(), item.formatCode(),
+                item.eventCode(), item.channelId(),
+                item.capturePosition(), item.captureSpeedKph(), 0,
+                item.captureTime(), vehicleState, item.syntheticPayload()));
+        if (cmd.deleteSign() == 1) {
+            multimediaStore.remove(item.multimediaId());
+        }
     }
 
     // ── Phase 3: geofence / vehicle management ────────────────────────────────
