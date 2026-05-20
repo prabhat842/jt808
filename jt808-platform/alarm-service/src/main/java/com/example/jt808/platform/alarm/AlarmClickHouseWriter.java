@@ -78,6 +78,9 @@ class AlarmClickHouseWriter {
                 .append(JsonSupport.numberField("memory_fail_mask", event.memoryFailMask())).append(",")
                 .append(JsonSupport.numberField("abnormal_driving_behavior", event.abnormalDrivingBehavior())).append(",")
                 .append(JsonSupport.numberField("fatigue_degree", event.fatigueDegree())).append(",")
+                .append(JsonSupport.numberField("dms_alarm_type", event.dmsAlarmType())).append(",")
+                .append(JsonSupport.numberField("dms_fatigue_degree", event.dmsFatigueDegree())).append(",")
+                .append(JsonSupport.numberField("dms_alarm_flags", event.dmsAlarmFlags())).append(",")
                 .append(JsonSupport.field("receive_time", time.format(event.receivedAt())))
                 .append("}");
         return row.toString();

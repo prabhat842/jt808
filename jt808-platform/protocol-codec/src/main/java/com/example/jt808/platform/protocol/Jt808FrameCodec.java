@@ -198,7 +198,7 @@ public class Jt808FrameCodec {
         Instant gpsTime = Jt808CodecSupport.readBcdTimestamp(body, protocolZone);
         return new TerminalLocationReport(warnBit, stateBit, latitude, longitude,
                 altitude, speed, direction, gpsTime,
-                -1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+                -1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 
     private TerminalRegistration decodeRegistration(ByteBuf body) {
@@ -239,6 +239,10 @@ public class Jt808FrameCodec {
         int  memoryFailMask             = 0;
         int  abnormalDrivingBehavior    = 0;
         int  fatigueDegree              = 0;
+        // DMS alarm additional info (0x65 TLV)
+        int  dmsAlarmType               = 0;
+        int  dmsFatigueDegree           = 0;
+        int  dmsAlarmFlags              = 0;
 
         while (body.readableBytes() >= 2) {
             int infoId  = body.readUnsignedByte();
@@ -260,6 +264,13 @@ public class Jt808FrameCodec {
                 case 0x2A -> { if (infoLen >= 2) ioStatus               = body.readUnsignedShort(); }
                 case 0x30 -> { if (infoLen >= 1) signalStrength         = body.readUnsignedByte(); }
                 case 0x31 -> { if (infoLen >= 1) satelliteCount         = body.readUnsignedByte(); }
+                case 0x65 -> {
+                    if (infoLen >= 6) {
+                        dmsAlarmType     = body.readUnsignedByte();
+                        dmsFatigueDegree = body.readUnsignedByte();
+                        dmsAlarmFlags    = (int) body.readUnsignedInt();
+                    }
+                }
                 default   -> { /* skip unknown additional info items */ }
             }
             body.readerIndex(endIdx); // advance past any unread bytes of this item
@@ -270,7 +281,8 @@ public class Jt808FrameCodec {
                 mileageTenthKm, fuelTenthLiters, vehicleSignalWord, ioStatus,
                 signalStrength, satelliteCount,
                 videoAlarmWord, videoSignalLostChannels, videoShieldChannels,
-                memoryFailMask, abnormalDrivingBehavior, fatigueDegree);
+                memoryFailMask, abnormalDrivingBehavior, fatigueDegree,
+                dmsAlarmType, dmsFatigueDegree, dmsAlarmFlags);
     }
 
     private static byte[] unescape(byte[] frameBody) {

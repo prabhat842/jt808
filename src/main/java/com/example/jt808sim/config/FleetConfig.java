@@ -12,6 +12,7 @@ public class FleetConfig {
     private ServerConfig server = new ServerConfig();
     private FleetSettings fleet = new FleetSettings();
     private Jt1078Settings jt1078 = new Jt1078Settings();
+    private DmsConfig dms = new DmsConfig();
     private List<VehicleIdentity> vehicles = new ArrayList<>();
 
     public static FleetConfig load(Path path) throws IOException {
@@ -83,6 +84,14 @@ public class FleetConfig {
 
     public void setJt1078(Jt1078Settings jt1078) {
         this.jt1078 = jt1078;
+    }
+
+    public DmsConfig getDms() {
+        return dms;
+    }
+
+    public void setDms(DmsConfig dms) {
+        this.dms = dms;
     }
 
     public List<VehicleIdentity> getVehicles() {
@@ -418,5 +427,18 @@ public class FleetConfig {
         STOP,
         LOOP,
         REVERSE
+    }
+
+    public static class DmsConfig {
+        private boolean enabled        = false;
+        private String  sidecarUrl     = "http://127.0.0.1:7500";
+        private long    pollIntervalMs = 500;
+
+        public boolean isEnabled()          { return enabled; }
+        public void    setEnabled(boolean enabled)         { this.enabled = enabled; }
+        public String  getSidecarUrl()      { return sidecarUrl; }
+        public void    setSidecarUrl(String sidecarUrl)    { this.sidecarUrl = sidecarUrl; }
+        public long    getPollIntervalMs()  { return pollIntervalMs; }
+        public void    setPollIntervalMs(long pollIntervalMs) { this.pollIntervalMs = pollIntervalMs; }
     }
 }

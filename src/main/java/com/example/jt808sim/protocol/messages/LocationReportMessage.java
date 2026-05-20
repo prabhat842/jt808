@@ -1,5 +1,6 @@
 package com.example.jt808sim.protocol.messages;
 
+import com.example.jt808sim.dms.DmsState;
 import com.example.jt808sim.fleet.VehicleState;
 import com.example.jt808sim.fleet.geofence.AreaAlarmInfo;
 import com.example.jt808sim.physics.Coordinate;
@@ -163,6 +164,16 @@ public class LocationReportMessage extends AbstractJt808Message {
             out.writeByte(3);
             out.writeShort(drivingBehavior);
             out.writeByte(fatigue);
+        }
+
+        // 0x65  DMS alarm additional info (BYTE primaryAlarmType + BYTE fatigueDegree + DWORD alarmFlags)
+        DmsState dms = vs.dmsState();
+        if (dms.isActive()) {
+            out.writeByte(0x65);
+            out.writeByte(6);
+            out.writeByte(dms.primaryAlarmType());
+            out.writeByte(dms.fatigueDegree());
+            out.writeInt(dms.alarmFlags());
         }
     }
 }

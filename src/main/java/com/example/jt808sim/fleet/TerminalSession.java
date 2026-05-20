@@ -28,6 +28,7 @@ import com.example.jt808sim.protocol.ParameterSetting;
 import com.example.jt808sim.protocol.RegistrationResponse;
 import com.example.jt808sim.protocol.SequenceGenerator;
 import com.example.jt808sim.protocol.ServerAck;
+import com.example.jt808sim.dms.DmsPoller;
 import com.example.jt808sim.fleet.geofence.GeofenceStore;
 import com.example.jt808sim.protocol.inbound.VehicleControlCommand;
 import com.example.jt808sim.protocol.messages.VehicleControlResponseMessage;
@@ -135,6 +136,7 @@ public class TerminalSession {
     private int reconnectAttempt;
     private boolean authenticatedCounted;
     private final Map<Integer, Jt1078MediaSession> mediaSessions = new ConcurrentHashMap<>();
+    private final DmsPoller dmsPoller;
 
     public TerminalSession(VehicleIdentity identity, FleetConfig config, Bootstrap bootstrap,
                            EventLoopGroup eventLoopGroup, MetricsRegistry metrics) {
@@ -152,6 +154,10 @@ public class TerminalSession {
         vehicleState.setGnssMode(identity.getGnssMode());
         this.mediaConfig = Jt1078MediaConfig.from(config.getJt1078());
         this.mediaCatalog = TerminalMediaCatalog.seed(identity);
+        FleetConfig.DmsConfig dmsCfg = config.getDms();
+        this.dmsPoller = (identity.isMediaCapable() && dmsCfg.isEnabled())
+                ? new DmsPoller(dmsCfg.getSidecarUrl(), vehicleState)
+                : null;
     }
 
     public VehicleIdentity identity() { return identity; }
@@ -270,6 +276,7 @@ public class TerminalSession {
     public void close() {
         state.set(TerminalState.CLOSED);
         cancelStreamingTasks();
+        if (dmsPoller != null) { dmsPoller.close(); }
         stopMedia();
         if (channel != null && channel.isActive()) {
             write(new LogoutMessage(sequenceGenerator.next(), identity.getTerminalId()));
@@ -749,6 +756,9 @@ public class TerminalSession {
             passengerTask = channel.eventLoop().scheduleAtFixedRate(
                     this::sendPassengerTrafficSafely, 30, 30, TimeUnit.MINUTES);
         }
+        if (dmsPoller != null) {
+            dmsPoller.start(config.getDms().getPollIntervalMs());
+        }
     }
 
     private void startTempTracking(int intervalSeconds, long validitySeconds) {
@@ -770,6 +780,7 @@ public class TerminalSession {
         if (heartbeatTask != null)  { heartbeatTask.cancel(false);  heartbeatTask = null; }
         if (locationTask != null)   { locationTask.cancel(false);   locationTask = null; }
         if (passengerTask != null)  { passengerTask.cancel(false);  passengerTask = null; }
+        if (dmsPoller != null)      { dmsPoller.stop(); }
         cancelTempTracking();
     }
 

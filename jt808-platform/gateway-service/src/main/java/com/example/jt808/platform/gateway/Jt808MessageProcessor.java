@@ -223,7 +223,10 @@ class Jt808MessageProcessor {
                 loc.videoShieldChannels(),
                 loc.memoryFailMask(),
                 loc.abnormalDrivingBehavior(),
-                loc.fatigueDegree());
+                loc.fatigueDegree(),
+                loc.dmsAlarmType(),
+                loc.dmsFatigueDegree(),
+                loc.dmsAlarmFlags());
     }
 
     private Mono<Void> handleAvAttributes(String terminalId, AudioVideoAttributesUpload attrs) {

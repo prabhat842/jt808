@@ -41,6 +41,11 @@
       "receiveBufferMillis": 200
     }
   },
+  "dms": {
+    "enabled": false,
+    "sidecarUrl": "http://127.0.0.1:7500",
+    "pollIntervalMs": 500
+  },
   "vehicles": [
     {
       "vin": "VIN00000000000001",

@@ -1,5 +1,6 @@
 package com.example.jt808sim.fleet;
 
+import com.example.jt808sim.dms.DmsState;
 import com.example.jt808sim.fleet.geofence.AreaAlarmInfo;
 import com.example.jt808sim.physics.Coordinate;
 
@@ -93,6 +94,9 @@ public class VehicleState {
     /** 0x18 — degree of fatigue (0–100, per Table 15). */
     private volatile int fatigueDegree = 0;
 
+    // ── DMS alarm state (0x65 TLV, populated by DmsPoller) ───────────────────
+    private final DmsState dmsState = new DmsState();
+
     // ── Alarm word accessors ──────────────────────────────────────────────────
 
     public long alarmWord()               { return alarmWord; }
@@ -143,6 +147,8 @@ public class VehicleState {
     public void setAbnormalDrivingBehavior(int flags) { this.abnormalDrivingBehavior = flags; }
     public int fatigueDegree()                { return fatigueDegree; }
     public void setFatigueDegree(int degree)  { this.fatigueDegree = Math.max(0, Math.min(100, degree)); }
+
+    public DmsState dmsState()               { return dmsState; }
 
     // ── Status word computation ───────────────────────────────────────────────
 

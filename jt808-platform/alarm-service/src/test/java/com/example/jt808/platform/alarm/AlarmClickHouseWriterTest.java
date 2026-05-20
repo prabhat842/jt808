@@ -27,7 +27,7 @@ class AlarmClickHouseWriterTest {
 
     @Test
     void alarmRowContainsCoreFields() {
-        AlarmEvent event = alarmEvent(0, 0, 0, 0, 0, 0);
+        AlarmEvent event = alarmEvent(0, 0, 0, 0, 0, 0, 0, 0, 0);
         String row = writer.alarmRow(event);
 
         assertTrue(row.contains("\"vehicle_id\":\"term_001\""));
@@ -38,7 +38,7 @@ class AlarmClickHouseWriterTest {
 
     @Test
     void alarmRowIncludesVideoAlarmFields() {
-        AlarmEvent event = alarmEvent(0x03, 0x05, 0x02, 0x01, 0x01, 80);
+        AlarmEvent event = alarmEvent(0x03, 0x05, 0x02, 0x01, 0x01, 80, 0, 0, 0);
         String row = writer.alarmRow(event);
 
         assertTrue(row.contains("\"video_alarm\":3"),        "video_alarm_word missing");
@@ -51,7 +51,7 @@ class AlarmClickHouseWriterTest {
 
     @Test
     void alarmRowVideoFieldsZeroWhenAbsent() {
-        AlarmEvent event = alarmEvent(0, 0, 0, 0, 0, 0);
+        AlarmEvent event = alarmEvent(0, 0, 0, 0, 0, 0, 0, 0, 0);
         String row = writer.alarmRow(event);
 
         assertTrue(row.contains("\"video_alarm\":0"));
@@ -67,13 +67,33 @@ class AlarmClickHouseWriterTest {
         AlarmEvent event = new AlarmEvent(
                 "id", "term_001", "term_001", 1, "Overspeed", 2, 2L,
                 31.23, 121.47, 60.0, true, Instant.now(), Instant.now(),
-                0, 0, 0, 0, 0, 0);
+                0, 0, 0, 0, 0, 0, 0, 0, 0);
         assertTrue(writer.alarmRow(event).contains("\"cleared\":1"));
     }
 
     @Test
+    void alarmRowIncludesDmsFields() {
+        AlarmEvent event = alarmEvent(0, 0, 0, 0, 0, 0, 1, 7, 0x11);
+        String row = writer.alarmRow(event);
+
+        assertTrue(row.contains("\"dms_alarm_type\":1"),     "dms_alarm_type missing");
+        assertTrue(row.contains("\"dms_fatigue_degree\":7"), "dms_fatigue_degree missing");
+        assertTrue(row.contains("\"dms_alarm_flags\":17"),   "dms_alarm_flags missing");
+    }
+
+    @Test
+    void alarmRowDmsFieldsZeroWhenAbsent() {
+        AlarmEvent event = alarmEvent(0, 0, 0, 0, 0, 0, 0, 0, 0);
+        String row = writer.alarmRow(event);
+
+        assertTrue(row.contains("\"dms_alarm_type\":0"));
+        assertTrue(row.contains("\"dms_fatigue_degree\":0"));
+        assertTrue(row.contains("\"dms_alarm_flags\":0"));
+    }
+
+    @Test
     void alarmRowIsValidJson() {
-        AlarmEvent event = alarmEvent(1, 2, 3, 4, 1, 50);
+        AlarmEvent event = alarmEvent(1, 2, 3, 4, 1, 50, 0, 0, 0);
         String row = writer.alarmRow(event);
         assertTrue(row.startsWith("{"));
         assertTrue(row.endsWith("}"));
@@ -114,12 +134,14 @@ class AlarmClickHouseWriterTest {
     // ── helpers ───────────────────────────────────────────────────────────────
 
     private static AlarmEvent alarmEvent(int videoAlarm, int signalLost, int shield,
-                                         int memFail, int driving, int fatigue) {
+                                         int memFail, int driving, int fatigue,
+                                         int dmsAlarmType, int dmsFatigueDegree, int dmsAlarmFlags) {
         return new AlarmEvent(
                 "alarm_001", "term_001", "term_001",
                 1, "Overspeed", 2, 2L,
                 31.23, 121.47, 60.0, false,
                 Instant.now(), Instant.now(),
-                videoAlarm, signalLost, shield, memFail, driving, fatigue);
+                videoAlarm, signalLost, shield, memFail, driving, fatigue,
+                dmsAlarmType, dmsFatigueDegree, dmsAlarmFlags);
     }
 }

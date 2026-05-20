@@ -32,6 +32,10 @@ public record AlarmEvent(
         int     videoShieldChannels,        // 0x16 DWORD channel bitmask
         int     memoryFailMask,             // 0x17 WORD memory failure bitmask
         int     abnormalDrivingBehavior,    // 0x18 WORD type flags
-        int     fatigueDegree              // 0x18 BYTE 0-100
+        int     fatigueDegree,             // 0x18 BYTE 0-100
+        // DMS alarm additional info (0x65 TLV, 0 = absent/none)
+        int     dmsAlarmType,              // primary alarm type (1=fatigue, 2=distraction, 5=no_seatbelt)
+        int     dmsFatigueDegree,          // fatigue level 0-10
+        int     dmsAlarmFlags              // alarm condition bitmask
 ) {
 }

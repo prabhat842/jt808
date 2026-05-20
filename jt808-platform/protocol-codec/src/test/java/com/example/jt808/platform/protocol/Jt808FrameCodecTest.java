@@ -178,6 +178,39 @@ class Jt808FrameCodecTest {
         assertEquals(0x8800, raw.readUnsignedShort()); // messageId
     }
 
+    // ── DMS alarm additional info (0x65) ─────────────────────────────────────
+
+    @Test
+    void decodesDmsAlarmTlv() {
+        ByteBuf body = locationBase();
+        // 0x65: primaryAlarm=1(fatigue), degree=7, flags=0x11 (fatigue|no_seatbelt)
+        body.writeByte(0x65); body.writeByte(6);
+        body.writeByte(1);      // primaryAlarmType = FATIGUE
+        body.writeByte(7);      // fatigueDegree
+        body.writeInt(0x11);    // alarmFlags: bit0=fatigue, bit4=no_seatbelt
+
+        DecodedJt808Message msg = codec.decode(
+                frame(MessageIds.LOCATION_REPORT, "00000000000000000001", 1, body));
+        TerminalLocationReport loc = assertInstanceOf(TerminalLocationReport.class, msg.body());
+
+        assertEquals(1,    loc.dmsAlarmType());
+        assertEquals(7,    loc.dmsFatigueDegree());
+        assertEquals(0x11, loc.dmsAlarmFlags());
+        assertTrue(loc.hasDmsAlarms());
+    }
+
+    @Test
+    void dmsFieldsDefaultToZeroWhenAbsent() {
+        DecodedJt808Message msg = codec.decode(
+                frame(MessageIds.LOCATION_REPORT, "00000000000000000001", 1, locationBase()));
+        TerminalLocationReport loc = assertInstanceOf(TerminalLocationReport.class, msg.body());
+
+        assertEquals(0, loc.dmsAlarmType());
+        assertEquals(0, loc.dmsFatigueDegree());
+        assertEquals(0, loc.dmsAlarmFlags());
+        assertFalse(loc.hasDmsAlarms());
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     private static ByteBuf locationBase() {

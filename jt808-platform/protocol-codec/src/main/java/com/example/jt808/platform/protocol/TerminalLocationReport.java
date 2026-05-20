@@ -21,6 +21,11 @@ import java.time.Instant;
  *   memoryFailMask          — 0x17 WORD bitmask (bit0-11=main, bit12-15=DR)
  *   abnormalDrivingBehavior — 0x18 WORD flags (bit0=fatigue, bit1=call, bit2=smoking)
  *   fatigueDegree           — 0x18 BYTE 0-100
+ *
+ * DMS alarm additional info (0x65 TLV, 0 = absent/none):
+ *   dmsAlarmType     — primary alarm type (1=fatigue, 2=distraction, 5=no_seatbelt, 6=cam_blocked)
+ *   dmsFatigueDegree — fatigue level 0-10
+ *   dmsAlarmFlags    — bitmask (bit0=fatigue, bit1=distraction, bit4=no_seatbelt, bit5=cam_blocked)
  */
 public record TerminalLocationReport(
         long    warnBit,           // alarm sign, Table 24
@@ -44,7 +49,11 @@ public record TerminalLocationReport(
         int     videoShieldChannels,        // 0x16 DWORD bitmask
         int     memoryFailMask,             // 0x17 WORD bitmask
         int     abnormalDrivingBehavior,    // 0x18 WORD type flags
-        int     fatigueDegree               // 0x18 BYTE 0-100
+        int     fatigueDegree,              // 0x18 BYTE 0-100
+        // DMS alarm additional info (0x65 TLV, 0 = absent/none)
+        int     dmsAlarmType,               // primary alarm type
+        int     dmsFatigueDegree,           // fatigue level 0-10
+        int     dmsAlarmFlags               // alarm condition bitmask
 ) {
     public boolean positioned()  { return (stateBit & 0x00000002L) != 0; }
     public boolean doorLocked()  { return (stateBit & (1L << 12)) != 0; }
@@ -57,5 +66,9 @@ public record TerminalLocationReport(
         return videoAlarmWord != 0 || videoSignalLostChannels != 0
                 || videoShieldChannels != 0 || memoryFailMask != 0
                 || abnormalDrivingBehavior != 0 || fatigueDegree != 0;
+    }
+
+    public boolean hasDmsAlarms() {
+        return dmsAlarmFlags != 0;
     }
 }
