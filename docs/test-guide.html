@@ -279,6 +279,7 @@
       <a href="#t05"><span class="icon">▹</span> T-05 RTVS Command</a>
       <a href="#t06"><span class="icon">▹</span> T-06 Reconnect</a>
       <a href="#t07"><span class="icon">▹</span> T-07 Scale</a>
+      <a href="#t08"><span class="icon">▹</span> T-08 DMS Camera</a>
     </div>
     <div class="sidebar-section">
       <div class="sidebar-section-label">Reference</div>
@@ -301,28 +302,31 @@
       <div class="two-col">
         <div>
           <h4>Fleet Simulator</h4>
-          <p>Simulates any number of JT808 vehicle terminals using Netty event loops. Each terminal performs the full registration → authentication → heartbeat → location lifecycle and can emit JT1078 synthetic media streams.</p>
+          <p>Simulates any number of JT808 vehicle terminals using Netty event loops. Each terminal performs the full registration → authentication → heartbeat → location lifecycle and can emit real camera/mic streams (JT1078) or synthetic media. When DMS mode is enabled, a Python MediaPipe sidecar analyses the laptop webcam in real-time and reports eye-closure and distraction alarms via 0x0200 location reports.</p>
         </div>
         <div>
           <h4>Platform (jt808-platform)</h4>
-          <p>The production-grade Spring Boot microservices stack: Reactor Netty gateway, Kafka event bus, ClickHouse telemetry persistence, alarm ingestion, and RTVS/CVNet media coordination.</p>
+          <p>The production-grade Spring Boot microservices stack: Reactor Netty gateway, Kafka event bus, ClickHouse telemetry persistence, alarm ingestion, and RTVS/CVNet media coordination. Decodes all standard JT808-2013 messages plus JT/T 1078-2016 video alarm TLVs (0x14–0x18) and the DMS TLV (0x65).</p>
         </div>
       </div>
 
       <div class="diagram">
 <span class="hi">SIMULATOR MACHINE</span>                    <span class="hi">SERVER MACHINE</span>
-┌──────────────────────────┐          ┌───────────────────────────────────────┐
-│  jt808-fleet-simulator   │          │  jt808-platform / gateway-service     │
-│                          │─<span class="arrow">7611</span>────▶│  port <span class="arrow">7611</span>  JT808 signaling            │
-│  N vehicle terminals     │─<span class="arrow">7612</span>────▶│  port <span class="arrow">7612</span>  file / attachment          │
-│  GPS trajectories        │          │  port <span class="arrow">8888</span>  RTVS gateway API           │
-│  JT808 protocol          │          └────────────────┬──────────────────────┘
-│  JT1078 media streams    │                           │ Kafka
-│                          │          ┌────────────────▼──────────────────────┐
-│                          │─<span class="arrow">1078</span>────▶│  RTVS / CVNet  (JT1078 media server)  │
-└──────────────────────────┘          │  port <span class="arrow">1078</span>  JT1078 media ingest        │
-                                      │  port <span class="arrow">8089</span>  stream studio UI           │
-                                      └───────────────────────────────────────┘
+┌─────────────────────────────────┐    ┌───────────────────────────────────────┐
+│  jt808-fleet-simulator          │    │  jt808-platform / gateway-service     │
+│                                 │─<span class="arrow">7611</span>──▶│  port <span class="arrow">7611</span>  JT808 signaling            │
+│  N vehicle terminals            │─<span class="arrow">7612</span>──▶│  port <span class="arrow">7612</span>  file / attachment          │
+│  GPS trajectories               │    │  port <span class="arrow">8888</span>  RTVS gateway API           │
+│  JT808 / JT1078 protocol        │    └────────────────┬──────────────────────┘
+│                                 │                     │ Kafka
+│  ┌───────────────────────────┐  │    ┌────────────────▼──────────────────────┐
+│  │  DMS Sidecar (Python)     │  │─<span class="arrow">1078</span>──▶│  RTVS / CVNet  (JT1078 media server)  │
+│  │  port <span class="arrow">7500</span>  MediaPipe     │  │    │  port <span class="arrow">1078</span>  JT1078 media ingest        │
+│  │  webcam → eye / fatigue   │  │    │  port <span class="arrow">8089</span>  stream studio UI           │
+│  └───────────┬───────────────┘  │    └───────────────────────────────────────┘
+│              │ HTTP :7500       │
+│  ← 0x65 DMS TLV in 0x0200 ───  │
+└─────────────────────────────────┘
       </div>
 
       <div class="callout info">
@@ -348,6 +352,7 @@
             <tr><td><span class="port">9092</span></td><td>Kafka broker</td><td>Event bus</td><td>Private</td></tr>
             <tr><td><span class="port">8123</span></td><td>ClickHouse</td><td>Telemetry HTTP interface</td><td>Private</td></tr>
             <tr><td><span class="port">6379</span></td><td>Redis</td><td>Session state, RTVS coordination</td><td>Private</td></tr>
+            <tr><td><span class="port">7500</span></td><td>DMS sidecar (Python)</td><td>MediaPipe eye-closure / fatigue detection — <code>GET /dms/state</code>, <code>POST /dms/seatbelt</code></td><td>Localhost only</td></tr>
           </tbody>
         </table>
       </div>
@@ -368,9 +373,16 @@
         </table>
       </div>
 
-      <p>For JT1078 camera-mode testing only:</p>
+      <p>For JT1078 camera-mode and DMS testing:</p>
       <pre><code>sudo apt-get install ffmpeg
-ffmpeg -version</code></pre>
+ffmpeg -version
+
+<span class="comment"># Python DMS sidecar dependencies (Python 3.10+ required)</span>
+pip install -r dms-sidecar/requirements.txt
+<span class="comment"># Key packages: mediapipe, opencv-python, fastapi, uvicorn</span>
+
+<span class="comment"># Confirm webcam is accessible</span>
+ls /dev/video*   <span class="comment"># Linux; use DMS_CAMERA_INDEX env var to select device</span></code></pre>
 
       <p>Raise file-descriptor limit before large runs:</p>
       <pre><code>ulimit -n 200000</code></pre>
@@ -392,11 +404,11 @@ mvn clean package -q
 ls */target/*.jar</code></pre>
 
       <h3>Run tests</h3>
-      <pre><code><span class="comment"># Simulator — 158 tests expected</span>
+      <pre><code><span class="comment"># Simulator — 164 tests expected</span>
 cd /path/to/jt808
 mvn test
 
-<span class="comment"># Platform — 21 tests expected</span>
+<span class="comment"># Platform — 25 tests expected</span>
 cd /path/to/jt808/jt808-platform
 mvn test</code></pre>
 
@@ -531,7 +543,7 @@ jt808:
       alarm-table: <span class="str">vehicle_alarm</span>
       attachment-table: <span class="str">vehicle_alarm_file</span></code></pre>
 
-      <h3>Simulator — <code>config/fleet.json</code></h3>
+      <h3>Simulator — <code>config/fleet.json</code> (synthetic streams)</h3>
       <pre><code>{
   <span class="str">"server"</span>: { <span class="str">"host"</span>: <span class="str">"127.0.0.1"</span>, <span class="str">"port"</span>: <span class="num">7611</span> },
   <span class="str">"fleet"</span>: {
@@ -550,6 +562,35 @@ jt808:
     <span class="str">"videoPayloadBytesPerPacket"</span>: <span class="num">950</span>,
     <span class="str">"videoPacketsPerSecond"</span>: <span class="num">25</span>
   }
+}</code></pre>
+
+      <h3>Simulator — <code>config/camera-host.json</code> (real camera + DMS)</h3>
+      <p>Use this config when the laptop has a webcam and the DMS sidecar is running. It enables live H.264 streaming to RTVS and DMS alarm reporting.</p>
+      <pre><code>{
+  <span class="str">"server"</span>: { <span class="str">"host"</span>: <span class="str">"127.0.0.1"</span>, <span class="str">"port"</span>: <span class="num">7611</span> },
+  <span class="str">"fleet"</span>: { <span class="str">"connectionCount"</span>: <span class="num">1</span> },
+  <span class="str">"jt1078"</span>: {
+    <span class="str">"mediaCapableTerminalCount"</span>: <span class="num">1</span>,
+    <span class="str">"host"</span>: <span class="str">"127.0.0.1"</span>,
+    <span class="str">"port"</span>: <span class="num">1078</span>,
+    <span class="str">"streamMode"</span>: <span class="str">"camera"</span>,     <span class="comment">← live webcam H.264 to RTVS</span>
+    <span class="str">"capture"</span>: {
+      <span class="str">"videoEnabled"</span>: <span class="kw">true</span>,
+      <span class="str">"audioEnabled"</span>: <span class="kw">true</span>,
+      <span class="str">"videoDevice"</span>: <span class="str">"/dev/video0"</span>,  <span class="comment">← adjust to your device</span>
+      <span class="str">"audioDevice"</span>: <span class="str">"hw:0,0"</span>,
+      <span class="str">"videoWidth"</span>: <span class="num">1280</span>, <span class="str">"videoHeight"</span>: <span class="num">720</span>, <span class="str">"videoFps"</span>: <span class="num">25</span>,
+      <span class="str">"videoBitrateKbps"</span>: <span class="num">800</span>,
+      <span class="str">"audioSampleRate"</span>: <span class="num">8000</span>, <span class="str">"audioChannels"</span>: <span class="num">1</span>,
+      <span class="str">"ffmpegPath"</span>: <span class="str">"ffmpeg"</span>
+    }
+  },
+  <span class="str">"dms"</span>: {
+    <span class="str">"enabled"</span>: <span class="kw">true</span>,             <span class="comment">← activate DMS polling</span>
+    <span class="str">"sidecarUrl"</span>: <span class="str">"http://127.0.0.1:7500"</span>,
+    <span class="str">"pollIntervalMs"</span>: <span class="num">500</span>
+  },
+  <span class="str">"vehicles"</span>: [{ <span class="str">"terminalId"</span>: <span class="str">"00000000000000000001"</span>, <span class="str">"mediaCapable"</span>: <span class="kw">true</span>, ... }]
 }</code></pre>
     </section>
 
@@ -615,6 +656,29 @@ reactive JT808 file gateway listening on 0.0.0.0:7612</code></pre>
             <pre><code>java -jar jt808-platform/admin-api/target/admin-api-0.1.0-SNAPSHOT.jar \
   --jt808.admin.redis-enabled=true</code></pre>
             Listens on <span class="port">8090</span>. Test: <code>curl http://localhost:8090/actuator/health</code>
+          </div>
+        </li>
+        <li>
+          <div class="step-num">7</div>
+          <div class="step-body">
+            <strong>DMS sidecar</strong> <span class="warn-badge">Camera mode only</span> — start before the simulator when testing T-08
+            <pre><code><span class="comment"># In a separate terminal — requires webcam attached</span>
+cd /path/to/jt808
+python dms-sidecar/dms_server.py
+
+<span class="comment"># Override camera index or bind address if needed</span>
+DMS_CAMERA_INDEX=0 DMS_HOST=127.0.0.1 DMS_PORT=7500 python dms-sidecar/dms_server.py</code></pre>
+            Expected: <code>Uvicorn running on http://127.0.0.1:7500</code><br>
+            Verify: <code>curl http://localhost:7500/health</code> → <code>{"ok":true}</code><br>
+            <br>
+            <strong>Toggle seatbelt:</strong>
+            <pre><code><span class="comment"># Fasten seatbelt (clears FLAG_NO_SEATBELT)</span>
+curl -X POST http://localhost:7500/dms/seatbelt \
+  -H "Content-Type: application/json" -d '{"worn":true}'
+
+<span class="comment"># Unfasten seatbelt (sets FLAG_NO_SEATBELT in next 0x0200)</span>
+curl -X POST http://localhost:7500/dms/seatbelt \
+  -H "Content-Type: application/json" -d '{"worn":false}'</code></pre>
           </div>
         </li>
       </ol>
@@ -870,6 +934,97 @@ java -Xms512m -Xmx2g \
       </div>
     </section>
 
+    <!-- T-08 -->
+    <section id="t08">
+      <div class="scenario-card">
+        <div class="scenario-header">
+          <span class="scenario-id">T-08</span>
+          <span class="scenario-title">DMS — Driver Monitoring via Webcam</span>
+        </div>
+        <div class="scenario-body">
+          <p><strong>What it tests:</strong> Real camera capture via FFmpeg → H.264 live stream to RTVS (simultaneous with DMS analysis), Python MediaPipe sidecar detecting eye closure and distraction → 0x65 DMS TLV embedded in 0x0200 location reports → platform decodes and writes <code>dms_alarm_type</code> / <code>dms_fatigue_degree</code> / <code>dms_alarm_flags</code> to ClickHouse.</p>
+
+          <p><strong>Prerequisites:</strong> Webcam attached, FFmpeg installed, Python DMS sidecar running (step 7 above), simulator started with <code>config/camera-host.json</code> and <code>"dms": {"enabled": true}</code>.</p>
+
+          <ol class="steps">
+            <li>
+              <div class="step-num">1</div>
+              <div class="step-body">
+                <strong>Start DMS sidecar</strong>
+                <pre><code>python dms-sidecar/dms_server.py
+curl http://localhost:7500/health   <span class="comment"># → {"ok":true}</span>
+curl http://localhost:7500/dms/state  <span class="comment"># should show faceDetected, alarmFlags</span></code></pre>
+              </div>
+            </li>
+            <li>
+              <div class="step-num">2</div>
+              <div class="step-body">
+                <strong>Start simulator with camera config</strong>
+                <pre><code>java -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar \
+  --config config/camera-host.json</code></pre>
+                Watch gateway log for: <code>started ffmpeg camera capture backend</code>
+              </div>
+            </li>
+            <li>
+              <div class="step-num">3</div>
+              <div class="step-body">
+                <strong>Trigger fatigue alarm — close eyes for 3+ seconds</strong>
+                <p>Close your eyes and hold for 3 seconds while facing the webcam. The sidecar calculates Eye Aspect Ratio (EAR) below 0.25 threshold and increments the fatigue degree. After ~3 s the degree reaches 7+, FLAG_FATIGUE is set in alarmFlags, and the next 0x0200 will contain the 0x65 TLV.</p>
+                <pre><code><span class="comment"># Watch the sidecar state in real time</span>
+watch -n 0.5 'curl -s http://localhost:7500/dms/state | python3 -m json.tool'</code></pre>
+                Expected when eyes closed: <code>"fatigueDegree": 7, "alarmFlags": 1, "primaryAlarm": 1</code>
+              </div>
+            </li>
+            <li>
+              <div class="step-num">4</div>
+              <div class="step-body">
+                <strong>Trigger distraction alarm — look away from camera</strong>
+                <p>Turn your head away so MediaPipe loses the face. Within two seconds the sidecar sets <code>alarmFlags: 2</code> (FLAG_DISTRACTION) and <code>primaryAlarm: 2</code>.</p>
+              </div>
+            </li>
+            <li>
+              <div class="step-num">5</div>
+              <div class="step-body">
+                <strong>Trigger seatbelt alarm</strong>
+                <pre><code>curl -X POST http://localhost:7500/dms/seatbelt \
+  -H "Content-Type: application/json" -d '{"worn":false}'</code></pre>
+                Expected sidecar state: <code>"alarmFlags": 16, "primaryAlarm": 5</code> (FLAG_NO_SEATBELT = bit 4 = 16)
+              </div>
+            </li>
+            <li>
+              <div class="step-num">6</div>
+              <div class="step-body">
+                <strong>Verify in ClickHouse</strong>
+                <pre><code>curl -s "http://localhost:8123/?query=SELECT+device_id,dms_alarm_type,dms_fatigue_degree,dms_alarm_flags,gps_time+FROM+jt808.vehicle_alarm+WHERE+dms_alarm_flags+>+0+ORDER+BY+gps_time+DESC+LIMIT+10+FORMAT+PrettyCompact"</code></pre>
+              </div>
+            </li>
+          </ol>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Check</th><th>Expected value</th></tr></thead>
+              <tbody>
+                <tr><td>Sidecar <code>/dms/state</code> fatigueDegree &gt; 0 when eyes closed</td><td>1–10 depending on duration</td></tr>
+                <tr><td>Sidecar <code>alarmFlags</code> when eyes closed</td><td>1 (bit 0 = fatigue)</td></tr>
+                <tr><td>Sidecar <code>alarmFlags</code> when face absent</td><td>2 (bit 1 = distraction)</td></tr>
+                <tr><td>Sidecar <code>alarmFlags</code> when seatbelt off</td><td>16 (bit 4)</td></tr>
+                <tr><td>ClickHouse <code>dms_alarm_flags &gt; 0</code> rows</td><td>≥ 1 per alarm event</td></tr>
+                <tr><td>RTVS receiving live stream</td><td><code>ss -tan | grep :1078</code> shows 1 open connection</td></tr>
+                <tr><td>FFmpeg camera stream log</td><td>No <code>ERROR</code> lines in gateway log</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="callout info">
+            <span class="ico">ℹ</span>
+            <div class="callout-body"><p>The DMS sidecar and the simulator read the webcam independently: FFmpeg captures the H.264 stream for RTVS, while OpenCV (inside Python) captures the same camera for face analysis. Both run concurrently without conflict.</p></div>
+          </div>
+
+          <p><span class="pass">PASS</span> when all three alarm types produce rows in <code>vehicle_alarm</code> with correct <code>dms_alarm_type</code> values, and RTVS shows the live stream active simultaneously.</p>
+        </div>
+      </div>
+    </section>
+
     <!-- ── troubleshoot ── -->
     <section id="troubleshoot">
       <h2>Troubleshooting</h2>
@@ -908,6 +1063,29 @@ java -Xms512m -Xmx2g \
       <pre><code>ulimit -n 200000               <span class="comment"># raise limit in the shell running the process</span>
 cat /proc/$(pgrep java)/limits  <span class="comment"># check effective limit of running JVM</span></code></pre>
 
+      <h3>DMS sidecar not detecting face</h3>
+      <ul>
+        <li>Check <code>curl http://localhost:7500/dms/state</code> — if <code>alarmFlags: 32</code> (FLAG_CAM_BLOCKED), the camera index is wrong. Set <code>DMS_CAMERA_INDEX=1</code> (or 2) and restart.</li>
+        <li>Ensure sufficient lighting — MediaPipe Face Mesh needs a clear frontal view.</li>
+        <li>If running inside a VM or remote desktop, V4L2 camera forwarding may be needed.</li>
+      </ul>
+
+      <h3>DMS alarms not appearing in ClickHouse</h3>
+      <ul>
+        <li>Confirm <code>"dms": {"enabled": true}</code> in the fleet config and the sidecar is running before the simulator starts.</li>
+        <li>Check sidecar state: <code>curl http://localhost:7500/dms/state</code> — <code>alarmFlags</code> must be non-zero before any 0x65 TLV is sent.</li>
+        <li>Verify the gateway is decoding 0x65: look for <code>dmsAlarmType</code> in gateway debug logs (<code>-Dlogging.level.com.example=DEBUG</code>).</li>
+        <li>Confirm platform <code>AlarmEvent.dmsAlarmFlags</code> flows through to alarm-service — check Kafka topic <code>telemetry.alarm</code>.</li>
+      </ul>
+
+      <h3>FFmpeg camera stream fails to start</h3>
+      <ul>
+        <li>Check the device exists: <code>ls -l /dev/video*</code></li>
+        <li>Test FFmpeg directly: <code>ffmpeg -f v4l2 -i /dev/video0 -vframes 1 test.jpg</code></li>
+        <li>If another process holds the device, find it: <code>fuser /dev/video0</code></li>
+        <li>On macOS, change capture flags to <code>-f avfoundation</code> in <code>FfmpegCameraFrameSource.buildCommand()</code>.</li>
+      </ul>
+
       <h3>Redis session key missing</h3>
       <ul>
         <li>Confirm <code>redis.enabled=true</code> in gateway config.</li>
@@ -930,6 +1108,8 @@ cat /proc/$(pgrep java)/limits  <span class="comment"># check effective limit of
             <tr><td>Simulator dashboard screenshot</td><td>Screenshot at stable state</td></tr>
             <tr><td>GPS row count</td><td><code>SELECT count() FROM jt808.vehicle_gps</code></td></tr>
             <tr><td>Alarm row count</td><td><code>SELECT count() FROM jt808.vehicle_alarm</code></td></tr>
+            <tr><td>DMS alarm rows (T-08 only)</td><td><code>SELECT count() FROM jt808.vehicle_alarm WHERE dms_alarm_flags &gt; 0</code></td></tr>
+            <tr><td>DMS sidecar state snapshot (T-08)</td><td><code>curl http://localhost:7500/dms/state</code></td></tr>
             <tr><td>Redis session dump</td><td><code>redis-cli HGETALL jt808:session:&lt;id&gt;</code></td></tr>
             <tr><td>Service health summary</td><td><code>curl localhost:PORT/actuator/health</code> × 5</td></tr>
           </tbody>
@@ -947,6 +1127,9 @@ cat /proc/$(pgrep java)/limits  <span class="comment"># check effective limit of
             <tr><td>mediaCapableTerminalCount</td><td></td></tr>
             <tr><td>Authenticated sessions (stable)</td><td></td></tr>
             <tr><td>Active media sessions (stable)</td><td></td></tr>
+            <tr><td>DMS fatigue alarm detected (T-08)</td><td>Yes / No</td></tr>
+            <tr><td>DMS distraction alarm detected (T-08)</td><td>Yes / No</td></tr>
+            <tr><td>DMS seatbelt alarm detected (T-08)</td><td>Yes / No</td></tr>
             <tr><td>ClickHouse GPS rows after 5 min</td><td></td></tr>
             <tr><td>Alarm rows present</td><td></td></tr>
             <tr><td>Invalid checksums</td><td>Must be 0</td></tr>
