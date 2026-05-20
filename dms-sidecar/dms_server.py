@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DMS Sidecar — MediaPipe Face Mesh eye-closure / distraction monitor.
+DMS Sidecar — MediaPipe Face Landmarker eye-closure / distraction monitor.
 
 Exposes:
   GET  /dms/state       → JSON with current DMS flags (consumed by Java simulator every 500 ms)
@@ -17,29 +17,36 @@ Primary alarm types:
   0 none | 1 fatigue | 2 distraction | 5 no_seatbelt | 6 cam_blocked
 
 Environment variables:
-  DMS_CAMERA_INDEX  integer, default 0
-  DMS_HOST          bind address, default 127.0.0.1
-  DMS_PORT          listen port,  default 7500
+  DMS_CAMERA_INDEX      integer, default 0
+  DMS_MODEL_PATH        path to face_landmarker.task, default same dir as this script
+  DMS_HOST              bind address, default 127.0.0.1
+  DMS_PORT              listen port,  default 7500
 """
 
 import os
+import pathlib
 import threading
 import time
 
 import cv2
 import mediapipe as mp
 import numpy as np
+from mediapipe.tasks import python as mp_python
+from mediapipe.tasks.python import vision as mp_vision
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
 
-# ── Eye landmark indices for EAR (MediaPipe Face Mesh 468-point model) ───────
+# ── Eye landmark indices for EAR (MediaPipe 478-point model) ─────────────────
 # Layout per eye: [outer, top_a, top_b, inner, bottom_b, bottom_a]
 RIGHT_EYE = [33,  160, 158, 133, 153, 144]
 LEFT_EYE  = [362, 385, 387, 263, 373, 380]
 
 EAR_CLOSED_THRESHOLD = 0.25   # avg EAR below this → eyes closed
 FATIGUE_FPS          = 25     # assumed capture fps for degree calc
+
+_SCRIPT_DIR = pathlib.Path(__file__).parent
+_DEFAULT_MODEL = _SCRIPT_DIR / "face_landmarker.task"
 
 # Alarm flags / types (mirror Java DmsState)
 FLAG_FATIGUE      = 1
@@ -71,19 +78,23 @@ def eye_aspect_ratio(landmarks, indices, w, h):
 # ── detector ─────────────────────────────────────────────────────────────────
 
 class DmsDetector:
-    def __init__(self, camera_index: int = 0):
+    def __init__(self, camera_index: int = 0, model_path: str | None = None):
         self._camera_index = camera_index
         self._seatbelt     = True
         self._closed_frames = 0
         self._lock  = threading.Lock()
         self._state = self._make_state(False, False, 0, False)
 
-        self._face_mesh = mp.solutions.face_mesh.FaceMesh(
-            max_num_faces=1,
-            refine_landmarks=False,
-            min_detection_confidence=0.5,
+        resolved_model = model_path or str(_DEFAULT_MODEL)
+        base_options = mp_python.BaseOptions(model_asset_path=resolved_model)
+        options = mp_vision.FaceLandmarkerOptions(
+            base_options=base_options,
+            num_faces=1,
+            min_face_detection_confidence=0.5,
+            min_face_presence_confidence=0.5,
             min_tracking_confidence=0.5,
         )
+        self._landmarker = mp_vision.FaceLandmarker.create_from_options(options)
         threading.Thread(target=self._capture_loop, daemon=True,
                          name="dms-capture").start()
 
@@ -150,15 +161,16 @@ class DmsDetector:
 
     def _process(self, frame):
         h, w = frame.shape[:2]
-        rgb     = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = self._face_mesh.process(rgb)
+        rgb      = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        result   = self._landmarker.detect(mp_image)
 
-        face_detected = bool(results.multi_face_landmarks)
+        face_detected = bool(result.face_landmarks)
         eyes_closed   = False
         distracted    = not face_detected
 
         if face_detected:
-            lm    = results.multi_face_landmarks[0].landmark
+            lm    = result.face_landmarks[0]
             ear_r = eye_aspect_ratio(lm, RIGHT_EYE, w, h)
             ear_l = eye_aspect_ratio(lm, LEFT_EYE,  w, h)
             eyes_closed = (ear_r + ear_l) / 2.0 < EAR_CLOSED_THRESHOLD
@@ -187,8 +199,9 @@ detector: DmsDetector | None = None
 @app.on_event("startup")
 def _startup():
     global detector
-    cam_idx  = int(os.getenv("DMS_CAMERA_INDEX", "0"))
-    detector = DmsDetector(camera_index=cam_idx)
+    cam_idx    = int(os.getenv("DMS_CAMERA_INDEX", "0"))
+    model_path = os.getenv("DMS_MODEL_PATH") or None
+    detector   = DmsDetector(camera_index=cam_idx, model_path=model_path)
 
 
 class SeatbeltRequest(BaseModel):

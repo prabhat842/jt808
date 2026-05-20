@@ -166,11 +166,16 @@ public class TerminalSession {
     public void connect(long delayMillis) {
         state.set(TerminalState.CONNECTING);
         eventLoopGroup.next().schedule(() -> {
+            log.info("terminal {} connecting to {}:{}", identity.getTerminalId(),
+                    params.serverHost(), params.serverPort());
             ChannelFuture future = bootstrap.connect(params.serverHost(), params.serverPort());
             future.addListener((ChannelFutureListener) cf -> {
                 if (cf.isSuccess()) {
                     reconnectAttempt = 0;
                 } else {
+                    log.warn("terminal {} connection to {}:{} failed — {}",
+                            identity.getTerminalId(), params.serverHost(), params.serverPort(),
+                            cf.cause().getMessage());
                     metrics.connectionFailures().increment();
                     scheduleReconnect();
                 }
@@ -919,6 +924,8 @@ public class TerminalSession {
         metrics.reconnectAttempts().increment();
         long baseSeconds = Math.min(60, 1L << Math.min(6, reconnectAttempt++));
         long jitterMillis = ThreadLocalRandom.current().nextLong(0, 1000);
+        log.info("terminal {} will retry in {} s (attempt {})",
+                identity.getTerminalId(), baseSeconds, reconnectAttempt);
         connect(baseSeconds * 1000 + jitterMillis);
     }
 }
