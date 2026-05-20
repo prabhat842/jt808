@@ -101,11 +101,16 @@ Start this **before** the simulator so the sidecar is ready when the simulator p
 ## Verify everything is connected
 
 ```bash
-# Gateway health
+# Admin API health
 curl http://localhost:8090/actuator/health
+# → {"status":"UP"}
 
-# Check terminals registered (replace with your admin token)
-curl -H "X-Api-Token: admin-token" http://localhost:8090/api/terminals
+# Service topology
+curl http://localhost:8090/admin/health/topology
+# → {"gateway":"external service","kafka":"event bus",...}
+
+# Look up a specific terminal session (requires Redis enabled)
+curl http://localhost:8090/admin/sessions/00000000000000000001
 ```
 
 ---
