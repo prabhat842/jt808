@@ -24,8 +24,8 @@
       "audioEnabled": true,
       "videoDevice": "/dev/video0",
       "audioDevice": "hw:0,6",
-      "videoWidth": 1280,
-      "videoHeight": 720,
+      "videoWidth": 640,
+      "videoHeight": 480,
       "videoFps": 25,
       "videoBitrateKbps": 800,
       "audioSampleRate": 8000,
@@ -42,7 +42,7 @@
     }
   },
   "dms": {
-    "enabled": false,
+    "enabled": true,
     "sidecarUrl": "http://127.0.0.1:7500",
     "pollIntervalMs": 500
   },
