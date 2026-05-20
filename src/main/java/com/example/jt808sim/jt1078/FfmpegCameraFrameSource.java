@@ -176,13 +176,21 @@ public class FfmpegCameraFrameSource implements Jt1078FrameSource {
                     "-f", "h264", "-");
         }
         if (videoDevice != null && (videoDevice.startsWith("http://") || videoDevice.startsWith("rtsp://"))) {
-            // Read from MJPEG HTTP stream (e.g. DMS sidecar /video endpoint)
+            // Read from MJPEG HTTP stream (e.g. DMS sidecar /video endpoint).
+            // -vf scale+format converts yuvj420p full-range JPEG → yuv420p limited-range.
+            // -sc_threshold 0 + fixed GOP ensures keyframes land on predictable boundaries
+            // so the HLS pipeline can use -c:v copy without irregular segment durations.
+            String size = capture.videoWidth() + ":" + capture.videoHeight();
             return List.of(
                     capture.ffmpegPath(), "-hide_banner", "-loglevel", "warning",
                     "-i", videoDevice,
-                    "-an", "-c:v", "libx264", "-preset", "veryfast",
+                    "-an",
+                    "-vf", "scale=" + size + ",format=yuv420p",
+                    "-c:v", "libx264", "-preset", "veryfast",
                     "-tune", "zerolatency", "-pix_fmt", "yuv420p",
+                    "-x264-params", "slices=1:colorprim=bt709:transfer=bt709:colormatrix=bt709",
                     "-b:v", bitrateK + "k", "-g", gop, "-keyint_min", gop,
+                    "-sc_threshold", "0",
                     "-f", "h264", "-");
         }
         return List.of(

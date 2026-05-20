@@ -148,27 +148,33 @@ class DmsDetector:
         }
 
     def _capture_loop(self):
-        cap = cv2.VideoCapture(self._camera_index)
-        if not cap.isOpened():
-            with self._lock:
-                self._state = {
-                    "faceDetected": False, "eyesClosed": False,
-                    "fatigueDegree": 0,    "distracted": True,
-                    "seatbeltWorn":  self._seatbelt,
-                    "alarmFlags":    FLAG_CAM_BLOCKED,
-                    "primaryAlarm":  ALARM_CAM_BLOCKED,
-                }
-            return
+        while True:
+            cap = cv2.VideoCapture(self._camera_index)
+            if not cap.isOpened():
+                with self._lock:
+                    self._state = {
+                        "faceDetected": False, "eyesClosed": False,
+                        "fatigueDegree": 0,    "distracted": True,
+                        "seatbeltWorn":  self._seatbelt,
+                        "alarmFlags":    FLAG_CAM_BLOCKED,
+                        "primaryAlarm":  ALARM_CAM_BLOCKED,
+                    }
+                time.sleep(2)   # retry every 2 s until camera is available
+                continue
 
-        try:
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    time.sleep(0.04)
-                    continue
-                self._process(frame)
-        finally:
-            cap.release()
+            try:
+                while True:
+                    ret, frame = cap.read()
+                    if not ret:
+                        time.sleep(0.04)
+                        continue
+                    self._process(frame)
+            except Exception:
+                pass
+            finally:
+                cap.release()
+            # camera dropped — wait and retry
+            time.sleep(1)
 
     def _process(self, frame):
         with self._lock:
