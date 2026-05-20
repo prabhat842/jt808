@@ -1,6 +1,7 @@
 package com.example.jt808.platform.gateway;
 
 import com.example.jt808.platform.contracts.AlarmEvent;
+import com.example.jt808.platform.contracts.AttachmentEvent;
 import com.example.jt808.platform.contracts.CommandResponseEvent;
 import com.example.jt808.platform.contracts.GpsTelemetryEvent;
 import com.example.jt808.platform.contracts.HeartbeatEvent;
@@ -10,6 +11,7 @@ import com.example.jt808.platform.protocol.AuthenticationBody;
 import com.example.jt808.platform.protocol.DecodedJt808Message;
 import com.example.jt808.platform.protocol.Jt808FrameCodec;
 import com.example.jt808.platform.protocol.MessageIds;
+import com.example.jt808.platform.protocol.MultimediaUploadBody;
 import com.example.jt808.platform.protocol.TerminalGeneralResponse;
 import com.example.jt808.platform.protocol.TerminalLocationReport;
 import com.example.jt808.platform.protocol.TerminalRegistration;
@@ -74,6 +76,14 @@ class Jt808MessageProcessor {
         }
         if (messageId == MessageIds.TERMINAL_GENERAL_RESPONSE && message.body() instanceof TerminalGeneralResponse response) {
             return handleTerminalResponse(message, terminalId, response);
+        }
+        if (messageId == MessageIds.MULTIMEDIA_EVENT
+                && message.body() instanceof MultimediaUploadBody upload) {
+            return handleMultimediaUpload(message, terminalId, upload);
+        }
+        if (messageId == MessageIds.MULTIMEDIA_DATA_UPLOAD
+                && message.body() instanceof MultimediaUploadBody upload) {
+            return handleMultimediaUpload(message, terminalId, upload);
         }
         if (isMediaSignal(messageId)) {
             return publishMediaSignal(message, terminalId).thenReturn(ack(message, 0));
@@ -185,7 +195,41 @@ class Jt808MessageProcessor {
                 loc.speedKph(),
                 cleared,
                 loc.gpsTime(),
-                now);
+                now,
+                loc.videoAlarmWord(),
+                loc.videoSignalLostChannels(),
+                loc.videoShieldChannels(),
+                loc.memoryFailMask(),
+                loc.abnormalDrivingBehavior(),
+                loc.fatigueDegree());
+    }
+
+    private Mono<byte[]> handleMultimediaUpload(DecodedJt808Message message, String terminalId, MultimediaUploadBody upload) {
+        Instant now = Instant.now();
+        String alarmId = terminalId + "_media_" + upload.multimediaId();
+        String fileName = terminalId + "_" + upload.multimediaId() + "." + upload.formatExtension();
+        String url = "jt808/media/" + terminalId + "/" + fileName;
+
+        AttachmentEvent event = new AttachmentEvent(
+                alarmId, terminalId, terminalId,
+                upload.eventCode(),
+                upload.channelId(),
+                upload.formatCode(),
+                0,
+                fileName,
+                upload.payloadBytes(),
+                url,
+                now, now);
+
+        if (upload.isDataUpload()) {
+            // 0x0801: send the proper 0x8800 multimedia upload ack
+            byte[] ack8800 = codec.multimediaUploadAck(terminalId, sequenceGenerator.next(), upload.multimediaId());
+            return events.publish(KafkaTopics.TELEMETRY_ATTACHMENT, terminalId, event)
+                    .thenReturn(ack8800);
+        }
+        // 0x0800: send generic ack
+        return events.publish(KafkaTopics.TELEMETRY_ATTACHMENT, terminalId, event)
+                .thenReturn(ack(message, 0));
     }
 
     private Mono<byte[]> handleTerminalResponse(DecodedJt808Message message, String terminalId, TerminalGeneralResponse response) {

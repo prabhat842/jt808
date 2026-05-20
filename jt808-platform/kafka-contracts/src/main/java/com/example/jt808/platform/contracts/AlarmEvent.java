@@ -25,6 +25,13 @@ public record AlarmEvent(
         double  speedKph,
         boolean cleared,        // true = alarm cleared, false = alarm opened
         Instant alarmTime,
-        Instant receivedAt
+        Instant receivedAt,
+        // JT/T 1078-2016 Table 13 video alarm additional info (0 = absent/none)
+        int     videoAlarmWord,             // 0x14 DWORD flag bits
+        int     videoSignalLostChannels,    // 0x15 DWORD channel bitmask
+        int     videoShieldChannels,        // 0x16 DWORD channel bitmask
+        int     memoryFailMask,             // 0x17 WORD memory failure bitmask
+        int     abnormalDrivingBehavior,    // 0x18 WORD type flags
+        int     fatigueDegree              // 0x18 BYTE 0-100
 ) {
 }

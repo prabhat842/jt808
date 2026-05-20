@@ -44,6 +44,17 @@ public class Jt808FrameCodec {
         return new DecodedJt808Message(header, decodeBody(messageId, body));
     }
 
+    /**
+     * Encodes 0x8800 multimedia upload ack (JT808-2013 §8.53).
+     * resendCount=0 means the upload is accepted as complete.
+     */
+    public byte[] multimediaUploadAck(String terminalId, int sequence, long multimediaId) {
+        ByteBuf body = Unpooled.buffer(5);
+        body.writeInt((int) multimediaId);
+        body.writeByte(0); // resend count = 0 (complete)
+        return encode(MessageIds.MULTIMEDIA_UPLOAD_ACK, terminalId, sequence, true, body);
+    }
+
     public byte[] platformGeneralAck(String terminalId, int sequence, int responseSequence, int responseMessageId, int result) {
         ByteBuf body = Unpooled.buffer(5);
         body.writeShort(responseSequence);
@@ -124,9 +135,52 @@ public class Jt808FrameCodec {
             TerminalLocationReport location = decodeLocation(body);
             if (location != null) return location;
         }
+        if (messageId == MessageIds.MULTIMEDIA_EVENT && body.readableBytes() >= 6) {
+            return decodeMultimediaEvent(body);
+        }
+        if (messageId == MessageIds.MULTIMEDIA_DATA_UPLOAD && body.readableBytes() >= 6) {
+            return decodeMultimediaDataUpload(body);
+        }
         byte[] raw = new byte[body.readableBytes()];
         body.readBytes(raw);
         return new RawBody(raw);
+    }
+
+    private MultimediaUploadBody decodeMultimediaEvent(ByteBuf body) {
+        long multimediaId = body.readUnsignedInt();
+        int mediaType     = body.readUnsignedByte();
+        int formatCode    = body.readUnsignedByte();
+        int eventCode     = body.readUnsignedByte();
+        int channelId     = body.readUnsignedByte();
+        return new MultimediaUploadBody(multimediaId, mediaType, formatCode, eventCode, channelId, null, 0);
+    }
+
+    private MultimediaUploadBody decodeMultimediaDataUpload(ByteBuf body) {
+        long multimediaId = body.readUnsignedInt();
+        int mediaType     = body.readUnsignedByte();
+        int formatCode    = body.readUnsignedByte();
+        int eventCode     = body.readUnsignedByte();
+        int channelId     = body.readUnsignedByte();
+        // The embedded location block in 0x0801 is the 28-byte basic block only (no TLV items).
+        // Consuming TLV items here would incorrectly parse the media payload as additional info.
+        TerminalLocationReport location = decodeLocationBasic(body);
+        int payloadBytes  = body.readableBytes(); // remaining bytes are the media payload
+        return new MultimediaUploadBody(multimediaId, mediaType, formatCode, eventCode, channelId, location, payloadBytes);
+    }
+
+    private TerminalLocationReport decodeLocationBasic(ByteBuf body) {
+        if (body.readableBytes() < 28) return null;
+        long warnBit   = body.readUnsignedInt();
+        long stateBit  = body.readUnsignedInt();
+        double latitude  = body.readUnsignedInt() / 1_000_000.0;
+        double longitude = body.readUnsignedInt() / 1_000_000.0;
+        int altitude   = body.readUnsignedShort();
+        double speed   = body.readUnsignedShort() / 10.0;
+        int direction  = body.readUnsignedShort();
+        Instant gpsTime = Jt808CodecSupport.readBcdTimestamp(body, protocolZone);
+        return new TerminalLocationReport(warnBit, stateBit, latitude, longitude,
+                altitude, speed, direction, gpsTime,
+                -1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 
     private TerminalRegistration decodeRegistration(ByteBuf body) {
@@ -160,6 +214,13 @@ public class Jt808FrameCodec {
         int  ioStatus          = 0;
         int  signalStrength    = 0;
         int  satelliteCount    = 0;
+        // JT/T 1078-2016 Table 13 video alarm additional info
+        int  videoAlarmWord             = 0;
+        int  videoSignalLostChannels    = 0;
+        int  videoShieldChannels        = 0;
+        int  memoryFailMask             = 0;
+        int  abnormalDrivingBehavior    = 0;
+        int  fatigueDegree              = 0;
 
         while (body.readableBytes() >= 2) {
             int infoId  = body.readUnsignedByte();
@@ -167,12 +228,20 @@ public class Jt808FrameCodec {
             if (body.readableBytes() < infoLen) break;
             int endIdx = body.readerIndex() + infoLen;
             switch (infoId) {
-                case 0x01 -> { if (infoLen >= 4) mileageTenthKm    = body.readUnsignedInt(); }
-                case 0x02 -> { if (infoLen >= 2) fuelTenthLiters   = body.readUnsignedShort(); }
-                case 0x25 -> { if (infoLen >= 4) vehicleSignalWord = (int) body.readUnsignedInt(); }
-                case 0x2A -> { if (infoLen >= 2) ioStatus          = body.readUnsignedShort(); }
-                case 0x30 -> { if (infoLen >= 1) signalStrength    = body.readUnsignedByte(); }
-                case 0x31 -> { if (infoLen >= 1) satelliteCount    = body.readUnsignedByte(); }
+                case 0x01 -> { if (infoLen >= 4) mileageTenthKm         = body.readUnsignedInt(); }
+                case 0x02 -> { if (infoLen >= 2) fuelTenthLiters        = body.readUnsignedShort(); }
+                case 0x14 -> { if (infoLen >= 4) videoAlarmWord         = (int) body.readUnsignedInt(); }
+                case 0x15 -> { if (infoLen >= 4) videoSignalLostChannels = (int) body.readUnsignedInt(); }
+                case 0x16 -> { if (infoLen >= 4) videoShieldChannels    = (int) body.readUnsignedInt(); }
+                case 0x17 -> { if (infoLen >= 2) memoryFailMask         = body.readUnsignedShort(); }
+                case 0x18 -> {
+                    if (infoLen >= 2) abnormalDrivingBehavior = body.readUnsignedShort();
+                    if (infoLen >= 3) fatigueDegree           = body.readUnsignedByte();
+                }
+                case 0x25 -> { if (infoLen >= 4) vehicleSignalWord      = (int) body.readUnsignedInt(); }
+                case 0x2A -> { if (infoLen >= 2) ioStatus               = body.readUnsignedShort(); }
+                case 0x30 -> { if (infoLen >= 1) signalStrength         = body.readUnsignedByte(); }
+                case 0x31 -> { if (infoLen >= 1) satelliteCount         = body.readUnsignedByte(); }
                 default   -> { /* skip unknown additional info items */ }
             }
             body.readerIndex(endIdx); // advance past any unread bytes of this item
@@ -181,7 +250,9 @@ public class Jt808FrameCodec {
         return new TerminalLocationReport(warnBit, stateBit, latitude, longitude,
                 altitude, speed, direction, gpsTime,
                 mileageTenthKm, fuelTenthLiters, vehicleSignalWord, ioStatus,
-                signalStrength, satelliteCount);
+                signalStrength, satelliteCount,
+                videoAlarmWord, videoSignalLostChannels, videoShieldChannels,
+                memoryFailMask, abnormalDrivingBehavior, fatigueDegree);
     }
 
     private static byte[] unescape(byte[] frameBody) {

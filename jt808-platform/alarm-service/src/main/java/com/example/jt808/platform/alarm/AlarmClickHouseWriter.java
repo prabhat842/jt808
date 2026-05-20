@@ -55,28 +55,35 @@ class AlarmClickHouseWriter {
                 .then();
     }
 
-    private String alarmRow(AlarmEvent event) {
-        return "{"
-                + JsonSupport.field("vehicle_id", event.vehicleId()) + ","
-                + JsonSupport.field("device_id", event.terminalId()) + ","
-                + JsonSupport.field("sim", event.terminalId()) + ","
-                + JsonSupport.field("alarm_id", event.alarmId()) + ","
-                + JsonSupport.field("jt_alarm_id", event.alarmId()) + ","
-                + JsonSupport.field("gps_time", time.format(event.alarmTime())) + ","
-                + JsonSupport.field("alarm_start_time", time.format(event.alarmTime())) + ","
-                + JsonSupport.numberField("alarm_type", event.alarmType()) + ","
-                + JsonSupport.field("alarm_name", event.alarmName()) + ","
-                + JsonSupport.numberField("alarm_level", event.alarmLevel()) + ","
-                + JsonSupport.numberField("warn_bit", event.warnBit()) + ","
-                + JsonSupport.numberField("speed", event.speedKph()) + ","
-                + "\"longitude\":\"" + decimal(event.longitude()) + "\","
-                + "\"latitude\":\"" + decimal(event.latitude()) + "\","
-                + JsonSupport.numberField("cleared", event.cleared() ? 1 : 0) + ","
-                + JsonSupport.field("receive_time", time.format(event.receivedAt()))
-                + "}";
+    String alarmRow(AlarmEvent event) {
+        StringBuilder row = new StringBuilder("{")
+                .append(JsonSupport.field("vehicle_id", event.vehicleId())).append(",")
+                .append(JsonSupport.field("device_id", event.terminalId())).append(",")
+                .append(JsonSupport.field("sim", event.terminalId())).append(",")
+                .append(JsonSupport.field("alarm_id", event.alarmId())).append(",")
+                .append(JsonSupport.field("jt_alarm_id", event.alarmId())).append(",")
+                .append(JsonSupport.field("gps_time", time.format(event.alarmTime()))).append(",")
+                .append(JsonSupport.field("alarm_start_time", time.format(event.alarmTime()))).append(",")
+                .append(JsonSupport.numberField("alarm_type", event.alarmType())).append(",")
+                .append(JsonSupport.field("alarm_name", event.alarmName())).append(",")
+                .append(JsonSupport.numberField("alarm_level", event.alarmLevel())).append(",")
+                .append(JsonSupport.numberField("warn_bit", event.warnBit())).append(",")
+                .append(JsonSupport.numberField("speed", event.speedKph())).append(",")
+                .append("\"longitude\":\"").append(decimal(event.longitude())).append("\",")
+                .append("\"latitude\":\"").append(decimal(event.latitude())).append("\",")
+                .append(JsonSupport.numberField("cleared", event.cleared() ? 1 : 0)).append(",")
+                .append(JsonSupport.numberField("video_alarm", event.videoAlarmWord())).append(",")
+                .append(JsonSupport.numberField("video_signal_lost_channels", event.videoSignalLostChannels())).append(",")
+                .append(JsonSupport.numberField("video_shield_channels", event.videoShieldChannels())).append(",")
+                .append(JsonSupport.numberField("memory_fail_mask", event.memoryFailMask())).append(",")
+                .append(JsonSupport.numberField("abnormal_driving_behavior", event.abnormalDrivingBehavior())).append(",")
+                .append(JsonSupport.numberField("fatigue_degree", event.fatigueDegree())).append(",")
+                .append(JsonSupport.field("receive_time", time.format(event.receivedAt())))
+                .append("}");
+        return row.toString();
     }
 
-    private String attachmentRow(AttachmentEvent event) {
+    String attachmentRow(AttachmentEvent event) {
         return "{"
                 + JsonSupport.field("vehicle_id", event.vehicleId()) + ","
                 + JsonSupport.field("device_id", event.terminalId()) + ","

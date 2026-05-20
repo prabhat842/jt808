@@ -13,6 +13,14 @@ import java.time.Instant;
  *   positioned()      — bit 1 (GNSS valid)
  *   doorLocked()      — bit 12
  *   loadStatus()      — bits 8-9 (0=empty 1=half 3=full)
+ *
+ * JT/T 1078-2016 Table 13 video alarm additional info (0 = absent/none):
+ *   videoAlarmWord          — 0x14 DWORD flag bits (Table 14)
+ *   videoSignalLostChannels — 0x15 DWORD bitmask (bit0=ch1...bit31=ch32)
+ *   videoShieldChannels     — 0x16 DWORD bitmask
+ *   memoryFailMask          — 0x17 WORD bitmask (bit0-11=main, bit12-15=DR)
+ *   abnormalDrivingBehavior — 0x18 WORD flags (bit0=fatigue, bit1=call, bit2=smoking)
+ *   fatigueDegree           — 0x18 BYTE 0-100
  */
 public record TerminalLocationReport(
         long    warnBit,           // alarm sign, Table 24
@@ -29,7 +37,14 @@ public record TerminalLocationReport(
         int     vehicleSignalWord, // 0x25 vehicle signal status (Table 31)
         int     ioStatus,          // 0x2A IO status (Table 32)
         int     signalStrength,    // 0x30 wireless signal strength
-        int     satelliteCount     // 0x31 GNSS satellite count
+        int     satelliteCount,    // 0x31 GNSS satellite count
+        // JT/T 1078-2016 Table 13 video alarm additional info (0 = absent/none)
+        int     videoAlarmWord,             // 0x14 DWORD
+        int     videoSignalLostChannels,    // 0x15 DWORD bitmask
+        int     videoShieldChannels,        // 0x16 DWORD bitmask
+        int     memoryFailMask,             // 0x17 WORD bitmask
+        int     abnormalDrivingBehavior,    // 0x18 WORD type flags
+        int     fatigueDegree               // 0x18 BYTE 0-100
 ) {
     public boolean positioned()  { return (stateBit & 0x00000002L) != 0; }
     public boolean doorLocked()  { return (stateBit & (1L << 12)) != 0; }
@@ -37,4 +52,10 @@ public record TerminalLocationReport(
 
     public double absoluteLatitude()  { return Math.abs(latitude); }
     public double absoluteLongitude() { return Math.abs(longitude); }
+
+    public boolean hasVideoAlarms() {
+        return videoAlarmWord != 0 || videoSignalLostChannels != 0
+                || videoShieldChannels != 0 || memoryFailMask != 0
+                || abnormalDrivingBehavior != 0 || fatigueDegree != 0;
+    }
 }
