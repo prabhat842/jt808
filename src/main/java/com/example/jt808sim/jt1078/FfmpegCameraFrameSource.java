@@ -34,7 +34,7 @@ public class FfmpegCameraFrameSource implements Jt1078FrameSource {
         ensureStarted();
         byte[] accessUnit = pollAccessUnit();
         if (accessUnit == null || accessUnit.length == 0) {
-            return fallback.nextFrame(frameIndex);
+            return null; // camera not ready yet — skip this tick, send nothing
         }
         boolean keyFrame = isKeyFrame(accessUnit);
         return new Jt1078Frame(
