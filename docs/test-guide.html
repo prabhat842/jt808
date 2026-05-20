@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JT808 / JT1078 Test Guide</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:   #1a2540;
+      --blue:   #2563eb;
+      --sky:    #dbeafe;
+      --green:  #16a34a;
+      --green-bg: #f0fdf4;
+      --amber:  #d97706;
+      --amber-bg: #fffbeb;
+      --red:    #dc2626;
+      --red-bg: #fef2f2;
+      --gray50: #f8fafc;
+      --gray100:#f1f5f9;
+      --gray200:#e2e8f0;
+      --gray500:#64748b;
+      --gray700:#334155;
+      --gray900:#0f172a;
+      --sidebar-w: 260px;
+      --header-h:  56px;
+      --code-bg:   #1e293b;
+      --code-text: #e2e8f0;
+      --radius:    6px;
+      --shadow:    0 1px 3px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.08);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 15px;
+      line-height: 1.65;
+      color: var(--gray900);
+      background: var(--gray50);
+    }
+
+    /* ── top bar ── */
+    header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      height: var(--header-h);
+      background: var(--navy);
+      display: flex; align-items: center; padding: 0 24px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.25);
+    }
+    header .logo { color: #fff; font-weight: 700; font-size: 17px; letter-spacing: -.3px; }
+    header .logo span { color: #60a5fa; }
+    header .badge {
+      margin-left: 12px; padding: 2px 8px; border-radius: 99px;
+      background: rgba(96,165,250,.18); color: #93c5fd;
+      font-size: 11px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase;
+    }
+    header nav { margin-left: auto; display: flex; gap: 20px; }
+    header nav a { color: #94a3b8; text-decoration: none; font-size: 13px; transition: color .15s; }
+    header nav a:hover { color: #fff; }
+
+    /* ── layout ── */
+    .layout {
+      display: flex;
+      margin-top: var(--header-h);
+      min-height: calc(100vh - var(--header-h));
+    }
+
+    /* ── sidebar ── */
+    .sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      background: #fff;
+      border-right: 1px solid var(--gray200);
+      position: sticky; top: var(--header-h);
+      height: calc(100vh - var(--header-h));
+      overflow-y: auto;
+      padding: 20px 0 40px;
+    }
+    .sidebar-section { padding: 0 16px; margin-bottom: 6px; margin-top: 16px; }
+    .sidebar-section-label {
+      font-size: 10px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase;
+      color: var(--gray500); padding: 0 8px 4px;
+    }
+    .sidebar a {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 8px; border-radius: var(--radius);
+      text-decoration: none; color: var(--gray700); font-size: 13.5px;
+      transition: background .12s, color .12s;
+    }
+    .sidebar a:hover { background: var(--sky); color: var(--blue); }
+    .sidebar a.active { background: var(--sky); color: var(--blue); font-weight: 600; }
+    .sidebar a .icon { width: 16px; text-align: center; opacity: .6; }
+
+    /* ── main ── */
+    main {
+      flex: 1;
+      padding: 40px 48px 80px;
+      max-width: 960px;
+    }
+
+    /* ── typography ── */
+    h1 { font-size: 28px; font-weight: 800; color: var(--navy); margin-bottom: 6px; }
+    h2 { font-size: 21px; font-weight: 700; color: var(--navy); margin: 48px 0 16px;
+         padding-bottom: 8px; border-bottom: 2px solid var(--gray200); }
+    h3 { font-size: 16px; font-weight: 700; color: var(--gray900); margin: 24px 0 10px; }
+    h4 { font-size: 14px; font-weight: 600; color: var(--gray700); margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .4px; }
+    p  { margin-bottom: 12px; color: var(--gray700); }
+    ul, ol { margin: 8px 0 12px 20px; color: var(--gray700); }
+    li { margin-bottom: 4px; }
+    strong { color: var(--gray900); }
+    a { color: var(--blue); }
+
+    /* ── lead ── */
+    .lead { font-size: 16px; color: var(--gray500); margin-bottom: 32px; }
+
+    /* ── section anchor ── */
+    section { scroll-margin-top: calc(var(--header-h) + 16px); }
+
+    /* ── code ── */
+    code {
+      font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+      font-size: 13px;
+      background: var(--gray100); color: #0f172a;
+      padding: 1px 5px; border-radius: 3px;
+    }
+    pre {
+      background: var(--code-bg); color: var(--code-text);
+      border-radius: var(--radius);
+      padding: 16px 20px; overflow-x: auto;
+      font-size: 13px; line-height: 1.6;
+      margin: 12px 0 20px;
+      box-shadow: var(--shadow);
+    }
+    pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+    .comment { color: #64748b; }
+    .kw  { color: #7dd3fc; }
+    .str { color: #86efac; }
+    .num { color: #fcd34d; }
+
+    /* ── tables ── */
+    .table-wrap { overflow-x: auto; margin: 12px 0 20px; border-radius: var(--radius); box-shadow: var(--shadow); }
+    table { width: 100%; border-collapse: collapse; background: #fff; font-size: 13.5px; }
+    th { background: var(--navy); color: #fff; font-weight: 600; padding: 10px 14px; text-align: left; font-size: 12px; letter-spacing: .3px; }
+    td { padding: 9px 14px; border-bottom: 1px solid var(--gray200); vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    tr:nth-child(even) td { background: var(--gray50); }
+
+    /* ── callouts ── */
+    .callout {
+      border-radius: var(--radius); padding: 14px 18px; margin: 16px 0;
+      display: flex; gap: 12px; align-items: flex-start;
+    }
+    .callout .ico { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+    .callout-body { flex: 1; }
+    .callout-body p { margin: 0; }
+    .callout.info  { background: var(--sky); border-left: 3px solid var(--blue); }
+    .callout.warn  { background: var(--amber-bg); border-left: 3px solid var(--amber); }
+    .callout.ok    { background: var(--green-bg); border-left: 3px solid var(--green); }
+    .callout.danger{ background: var(--red-bg); border-left: 3px solid var(--red); }
+
+    /* ── step list ── */
+    .steps { list-style: none; margin: 16px 0; padding: 0; }
+    .steps li {
+      display: flex; gap: 16px; margin-bottom: 18px;
+    }
+    .steps li .step-num {
+      width: 28px; height: 28px; flex-shrink: 0;
+      background: var(--blue); color: #fff;
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 13px;
+    }
+    .steps li .step-body { flex: 1; }
+    .steps li .step-body strong { display: block; margin-bottom: 4px; }
+
+    /* ── scenario card ── */
+    .scenario-card {
+      border: 1px solid var(--gray200); border-radius: var(--radius);
+      background: #fff; margin: 24px 0; overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+    .scenario-header {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 18px;
+      background: var(--gray100); border-bottom: 1px solid var(--gray200);
+    }
+    .scenario-id {
+      background: var(--navy); color: #fff;
+      padding: 2px 8px; border-radius: 4px;
+      font-family: monospace; font-weight: 700; font-size: 13px;
+    }
+    .scenario-title { font-weight: 700; font-size: 15px; }
+    .scenario-body { padding: 18px; }
+    .scenario-body p:last-child, .scenario-body ul:last-child { margin-bottom: 0; }
+
+    /* ── port badge ── */
+    .port {
+      display: inline-block; padding: 1px 6px; border-radius: 4px;
+      background: #1e293b; color: #7dd3fc;
+      font-family: monospace; font-size: 12px; font-weight: 600;
+    }
+
+    /* ── pass/fail badges ── */
+    .pass { display: inline-block; padding: 1px 8px; border-radius: 99px;
+            background: var(--green-bg); color: var(--green); font-size: 12px; font-weight: 700; border: 1px solid #bbf7d0; }
+    .fail { display: inline-block; padding: 1px 8px; border-radius: 99px;
+            background: var(--red-bg); color: var(--red); font-size: 12px; font-weight: 700; border: 1px solid #fecaca; }
+    .warn-badge { display: inline-block; padding: 1px 8px; border-radius: 99px;
+            background: var(--amber-bg); color: var(--amber); font-size: 12px; font-weight: 700; border: 1px solid #fde68a; }
+
+    /* ── inline service label ── */
+    .svc {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 1px 7px; border-radius: 4px;
+      background: var(--gray100); color: var(--gray700);
+      font-size: 12px; font-weight: 600; font-family: monospace;
+    }
+    .svc.platform { background: #ede9fe; color: #6d28d9; }
+    .svc.sim      { background: #dcfce7; color: #15803d; }
+
+    /* ── two-column ── */
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 16px 0; }
+    @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
+
+    /* ── ascii diagram ── */
+    .diagram {
+      background: var(--code-bg); color: #94a3b8;
+      border-radius: var(--radius); padding: 20px 24px;
+      font-family: monospace; font-size: 13px; line-height: 1.5;
+      overflow-x: auto; margin: 16px 0;
+    }
+    .diagram .hi { color: #7dd3fc; }
+    .diagram .arrow { color: #34d399; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">JT808 / JT1078 <span>Fleet Simulator</span></div>
+  <div class="badge">Test Guide</div>
+  <nav>
+    <a href="#quick-start">Quick Start</a>
+    <a href="#platform">Platform Stack</a>
+    <a href="#scenarios">Scenarios</a>
+    <a href="#troubleshoot">Troubleshoot</a>
+  </nav>
+</header>
+
+<div class="layout">
+
+  <!-- ── sidebar ── -->
+  <nav class="sidebar" aria-label="Page sections">
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Overview</div>
+      <a href="#overview"><span class="icon">⬡</span> Architecture</a>
+      <a href="#ports"><span class="icon">⬡</span> Ports &amp; Services</a>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Quick Start</div>
+      <a href="#prereqs"><span class="icon">✦</span> Prerequisites</a>
+      <a href="#build"><span class="icon">✦</span> Build</a>
+      <a href="#quick-start"><span class="icon">✦</span> Embedded Server</a>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Platform Stack</div>
+      <a href="#platform"><span class="icon">◈</span> Infrastructure</a>
+      <a href="#platform-config"><span class="icon">◈</span> Configuration</a>
+      <a href="#platform-start"><span class="icon">◈</span> Start Services</a>
+      <a href="#simulator-start"><span class="icon">◈</span> Start Simulator</a>
+      <a href="#verify"><span class="icon">◈</span> Verify</a>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Test Scenarios</div>
+      <a href="#t01"><span class="icon">▹</span> T-01 Connection</a>
+      <a href="#t02"><span class="icon">▹</span> T-02 GPS Telemetry</a>
+      <a href="#t03"><span class="icon">▹</span> T-03 Alarms</a>
+      <a href="#t04"><span class="icon">▹</span> T-04 JT1078 Media</a>
+      <a href="#t05"><span class="icon">▹</span> T-05 RTVS Command</a>
+      <a href="#t06"><span class="icon">▹</span> T-06 Reconnect</a>
+      <a href="#t07"><span class="icon">▹</span> T-07 Scale</a>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Reference</div>
+      <a href="#troubleshoot"><span class="icon">⚙</span> Troubleshoot</a>
+      <a href="#evidence"><span class="icon">⚙</span> Evidence</a>
+    </div>
+  </nav>
+
+  <!-- ── main ── -->
+  <main>
+
+    <h1>JT808 / JT1078 Test &amp; Setup Guide</h1>
+    <p class="lead">A practical manual for the testing team — from first build to live JT1078 stream verification.</p>
+
+    <!-- ── overview ── -->
+    <section id="overview">
+      <h2>Architecture</h2>
+      <p>The repository contains two deployable components:</p>
+
+      <div class="two-col">
+        <div>
+          <h4>Fleet Simulator</h4>
+          <p>Simulates any number of JT808 vehicle terminals using Netty event loops. Each terminal performs the full registration → authentication → heartbeat → location lifecycle and can emit JT1078 synthetic media streams.</p>
+        </div>
+        <div>
+          <h4>Platform (jt808-platform)</h4>
+          <p>The production-grade Spring Boot microservices stack: Reactor Netty gateway, Kafka event bus, ClickHouse telemetry persistence, alarm ingestion, and RTVS/CVNet media coordination.</p>
+        </div>
+      </div>
+
+      <div class="diagram">
+<span class="hi">SIMULATOR MACHINE</span>                    <span class="hi">SERVER MACHINE</span>
+┌──────────────────────────┐          ┌───────────────────────────────────────┐
+│  jt808-fleet-simulator   │          │  jt808-platform / gateway-service     │
+│                          │─<span class="arrow">7611</span>────▶│  port <span class="arrow">7611</span>  JT808 signaling            │
+│  N vehicle terminals     │─<span class="arrow">7612</span>────▶│  port <span class="arrow">7612</span>  file / attachment          │
+│  GPS trajectories        │          │  port <span class="arrow">8888</span>  RTVS gateway API           │
+│  JT808 protocol          │          └────────────────┬──────────────────────┘
+│  JT1078 media streams    │                           │ Kafka
+│                          │          ┌────────────────▼──────────────────────┐
+│                          │─<span class="arrow">1078</span>────▶│  RTVS / CVNet  (JT1078 media server)  │
+└──────────────────────────┘          │  port <span class="arrow">1078</span>  JT1078 media ingest        │
+                                      │  port <span class="arrow">8089</span>  stream studio UI           │
+                                      └───────────────────────────────────────┘
+      </div>
+
+      <div class="callout info">
+        <span class="ico">ℹ</span>
+        <div class="callout-body"><p>For a <strong>local smoke test</strong> (single machine), leave all <code>host</code> values as <code>127.0.0.1</code>. For a <strong>two-machine test</strong>, replace every <code>SERVER_IP</code> placeholder with the actual IP of the server machine.</p></div>
+      </div>
+    </section>
+
+    <!-- ── ports ── -->
+    <section id="ports">
+      <h2>Ports &amp; Services</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>Service</th><th>Purpose</th><th>Exposure</th></tr></thead>
+          <tbody>
+            <tr><td><span class="port">7611</span></td><td>gateway-service</td><td>JT808 signaling — registration, auth, heartbeat, location, alarms</td><td>Public (device-facing)</td></tr>
+            <tr><td><span class="port">7612</span></td><td>gateway-service</td><td>JT808 file/attachment channel</td><td>Public (device-facing)</td></tr>
+            <tr><td><span class="port">8888</span></td><td>gateway-service HTTP</td><td>RTVS gateway API: <code>/VideoControl</code>, <code>/GetVehicleSim</code></td><td>Private</td></tr>
+            <tr><td><span class="port">1078</span></td><td>RTVS / CVNet</td><td>JT1078 media ingest TCP</td><td>Device-facing or private relay</td></tr>
+            <tr><td><span class="port">8089</span></td><td>RTVS studio</td><td>Live stream viewer &amp; session API</td><td>Private / admin</td></tr>
+            <tr><td><span class="port">8090</span></td><td>admin-api</td><td>Session lookup, topology info</td><td>Private</td></tr>
+            <tr><td><span class="port">8091</span></td><td>auth-service</td><td>Authentication REST</td><td>Private</td></tr>
+            <tr><td><span class="port">9092</span></td><td>Kafka broker</td><td>Event bus</td><td>Private</td></tr>
+            <tr><td><span class="port">8123</span></td><td>ClickHouse</td><td>Telemetry HTTP interface</td><td>Private</td></tr>
+            <tr><td><span class="port">6379</span></td><td>Redis</td><td>Session state, RTVS coordination</td><td>Private</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── prereqs ── -->
+    <section id="prereqs">
+      <h2>Prerequisites</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Tool</th><th>Minimum</th><th>Verify</th></tr></thead>
+          <tbody>
+            <tr><td>JDK</td><td>21</td><td><code>java -version</code></td></tr>
+            <tr><td>Maven</td><td>3.9</td><td><code>mvn -version</code></td></tr>
+            <tr><td>Docker + Compose</td><td>24 / 2.20</td><td><code>docker compose version</code></td></tr>
+            <tr><td>OS</td><td>Ubuntu 22.04 LTS (recommended)</td><td><code>lsb_release -a</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>For JT1078 camera-mode testing only:</p>
+      <pre><code>sudo apt-get install ffmpeg
+ffmpeg -version</code></pre>
+
+      <p>Raise file-descriptor limit before large runs:</p>
+      <pre><code>ulimit -n 200000</code></pre>
+    </section>
+
+    <!-- ── build ── -->
+    <section id="build">
+      <h2>Build</h2>
+
+      <h3>Simulator</h3>
+      <pre><code>cd /path/to/jt808
+mvn clean package -q
+ls target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar</code></pre>
+
+      <h3>Platform microservices</h3>
+      <pre><code>cd /path/to/jt808/jt808-platform
+mvn clean package -q
+<span class="comment"># Each service produces its own runnable jar under its target/ directory</span>
+ls */target/*.jar</code></pre>
+
+      <h3>Run tests</h3>
+      <pre><code><span class="comment"># Simulator — 158 tests expected</span>
+cd /path/to/jt808
+mvn test
+
+<span class="comment"># Platform — 21 tests expected</span>
+cd /path/to/jt808/jt808-platform
+mvn test</code></pre>
+
+      <div class="callout ok">
+        <span class="ico">✓</span>
+        <div class="callout-body"><p>Both builds must exit with <strong>BUILD SUCCESS</strong> and <code>Failures: 0, Errors: 0</code> before proceeding.</p></div>
+      </div>
+    </section>
+
+    <!-- ── quick start (embedded) ── -->
+    <section id="quick-start">
+      <h2>Quick Start — Embedded Server (Single Machine)</h2>
+      <p>Uses the embedded <code>ServerMain</code> inside the simulator jar. No Kafka or ClickHouse needed. Good for protocol smoke tests.</p>
+
+      <ol class="steps">
+        <li>
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <strong>Start the embedded JT808 server</strong>
+            <pre><code>java -Djt808.transport=nio \
+  -cp target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar \
+  com.example.jt808sim.server.ServerMain \
+  --config config/server.json</code></pre>
+            Expected: <code>JT808 alarm server listening on 0.0.0.0:7611</code>
+          </div>
+        </li>
+        <li>
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <strong>Start the simulator (separate terminal)</strong>
+            <pre><code>java -Xms512m -Xmx1g \
+  -XX:+UseG1GC \
+  -Dio.netty.allocator.type=pooled \
+  -Djt808.transport=nio \
+  -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar \
+  --config config/fleet.json</code></pre>
+            The dashboard appears and refreshes every second.
+          </div>
+        </li>
+        <li>
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <strong>Confirm authentication</strong>
+            <p>Within 30 seconds the dashboard should show <strong>Authenticated sessions = 10</strong> (matching <code>connectionCount</code> in <code>config/fleet.json</code>).</p>
+          </div>
+        </li>
+      </ol>
+
+      <div class="callout info">
+        <span class="ico">ℹ</span>
+        <div class="callout-body"><p>The embedded server does not have Kafka or ClickHouse. For full telemetry persistence, use the Platform Stack below.</p></div>
+      </div>
+    </section>
+
+    <!-- ── platform ── -->
+    <section id="platform">
+      <h2>Platform Stack — Infrastructure Setup</h2>
+      <p>The platform services require Kafka, Redis, and optionally ClickHouse. Use Docker Compose for a local dev stack.</p>
+
+      <h3>Minimal <code>docker-compose.yml</code></h3>
+      <pre><code><span class="comment"># Save as docker-compose.yml in the repo root and run: docker compose up -d</span>
+<span class="kw">services</span>:
+  <span class="kw">kafka</span>:
+    image: confluentinc/cp-kafka:7.6.1
+    ports: [<span class="str">"9092:9092"</span>]
+    environment:
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: <span class="num">1</span>
+      KAFKA_CONTROLLER_QUORUM_VOTERS: <span class="str">"1@kafka:9093"</span>
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LOG_DIRS: /tmp/kraft-logs
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qg
+
+  redis:
+    image: redis:7-alpine
+    ports: [<span class="str">"6379:6379"</span>]
+    command: redis-server --save "" --appendonly no
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    ports: [<span class="str">"8123:8123"</span>, <span class="str">"9000:9000"</span>]
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }</code></pre>
+
+      <pre><code>docker compose up -d
+<span class="comment"># Verify all three containers are healthy</span>
+docker compose ps</code></pre>
+    </section>
+
+    <!-- ── platform config ── -->
+    <section id="platform-config">
+      <h2>Platform Configuration</h2>
+      <p>Each service has an <code>application.yml</code> with all settings defaulting to <code>127.0.0.1</code>. Enable Kafka and Redis with the flags below. Override on the command line with <code>--jt808.gateway.kafka.enabled=true</code> or by editing <code>application.yml</code>.</p>
+
+      <h3>gateway-service</h3>
+      <pre><code><span class="comment"># jt808-platform/gateway-service/src/main/resources/application.yml</span>
+jt808:
+  gateway:
+    host: <span class="str">0.0.0.0</span>
+    signaling-port: <span class="num">7611</span>
+    file-port: <span class="num">7612</span>
+    auth-code: <span class="str">server-token</span>          <span class="comment"># must match simulator config</span>
+    kafka:
+      enabled: <span class="kw">true</span>                   <span class="comment"># set to true when Kafka is running</span>
+      bootstrap-servers: <span class="str">127.0.0.1:9092</span>
+    redis:
+      enabled: <span class="kw">true</span>                   <span class="comment"># set to true when Redis is running</span>
+      session-ttl-seconds: <span class="num">90</span></code></pre>
+
+      <h3>telemetry-service</h3>
+      <pre><code>jt808:
+  telemetry:
+    kafka:
+      enabled: <span class="kw">true</span>
+      bootstrap-servers: <span class="str">127.0.0.1:9092</span>
+    click-house:
+      url: <span class="str">http://127.0.0.1:8123/</span>
+      database: <span class="str">jt808</span>
+      table: <span class="str">vehicle_gps</span></code></pre>
+
+      <h3>alarm-service</h3>
+      <pre><code>jt808:
+  alarm:
+    kafka:
+      enabled: <span class="kw">true</span>
+      bootstrap-servers: <span class="str">127.0.0.1:9092</span>
+    click-house:
+      url: <span class="str">http://127.0.0.1:8123/</span>
+      database: <span class="str">jt808</span>
+      alarm-table: <span class="str">vehicle_alarm</span>
+      attachment-table: <span class="str">vehicle_alarm_file</span></code></pre>
+
+      <h3>Simulator — <code>config/fleet.json</code></h3>
+      <pre><code>{
+  <span class="str">"server"</span>: { <span class="str">"host"</span>: <span class="str">"127.0.0.1"</span>, <span class="str">"port"</span>: <span class="num">7611</span> },
+  <span class="str">"fleet"</span>: {
+    <span class="str">"connectionCount"</span>: <span class="num">10</span>,
+    <span class="str">"connectStaggerMs"</span>: <span class="num">20</span>,
+    <span class="str">"locationIntervalSeconds"</span>: <span class="num">5</span>,
+    <span class="str">"heartbeatIntervalSeconds"</span>: <span class="num">30</span>,
+    <span class="str">"routeMode"</span>: <span class="str">"REVERSE"</span>
+  },
+  <span class="str">"jt1078"</span>: {
+    <span class="str">"mediaCapableTerminalCount"</span>: <span class="num">2</span>,
+    <span class="str">"host"</span>: <span class="str">"127.0.0.1"</span>,
+    <span class="str">"port"</span>: <span class="num">1078</span>,
+    <span class="str">"streamMode"</span>: <span class="str">"file"</span>,
+    <span class="str">"mediaFiles"</span>: [<span class="str">"sample-media/city-loop.mp4"</span>],
+    <span class="str">"videoPayloadBytesPerPacket"</span>: <span class="num">950</span>,
+    <span class="str">"videoPacketsPerSecond"</span>: <span class="num">25</span>
+  }
+}</code></pre>
+    </section>
+
+    <!-- ── platform start ── -->
+    <section id="platform-start">
+      <h2>Start Platform Services</h2>
+
+      <div class="callout warn">
+        <span class="ico">⚠</span>
+        <div class="callout-body"><p>Start the Docker infrastructure first, then services in the order listed. The simulator always starts last.</p></div>
+      </div>
+
+      <ol class="steps">
+        <li>
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <strong>Infrastructure (Kafka, Redis, ClickHouse)</strong>
+            <pre><code>docker compose up -d
+docker compose ps   <span class="comment"># all three should be Up/healthy</span></code></pre>
+          </div>
+        </li>
+        <li>
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <strong>gateway-service</strong> — receives JT808 connections and dispatches commands
+            <pre><code>java -jar jt808-platform/gateway-service/target/gateway-service-0.1.0-SNAPSHOT.jar \
+  --jt808.gateway.kafka.enabled=true \
+  --jt808.gateway.redis.enabled=true</code></pre>
+            <strong>Expected log lines within 5 s:</strong>
+            <pre><code>reactive JT808 signaling gateway listening on 0.0.0.0:7611
+reactive JT808 file gateway listening on 0.0.0.0:7612</code></pre>
+          </div>
+        </li>
+        <li>
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <strong>telemetry-service</strong> — writes GPS rows to ClickHouse
+            <pre><code>java -jar jt808-platform/telemetry-service/target/telemetry-service-0.1.0-SNAPSHOT.jar \
+  --jt808.telemetry.kafka.enabled=true</code></pre>
+          </div>
+        </li>
+        <li>
+          <div class="step-num">4</div>
+          <div class="step-body">
+            <strong>alarm-service</strong> — writes alarm and attachment rows to ClickHouse
+            <pre><code>java -jar jt808-platform/alarm-service/target/alarm-service-0.1.0-SNAPSHOT.jar \
+  --jt808.alarm.kafka.enabled=true</code></pre>
+          </div>
+        </li>
+        <li>
+          <div class="step-num">5</div>
+          <div class="step-body">
+            <strong>media-service</strong> — writes RTVS Redis coordination keys
+            <pre><code>java -jar jt808-platform/media-service/target/media-service-0.1.0-SNAPSHOT.jar \
+  --jt808.media.kafka.enabled=true \
+  --jt808.media.redis.enabled=true</code></pre>
+          </div>
+        </li>
+        <li>
+          <div class="step-num">6</div>
+          <div class="step-body">
+            <strong>admin-api</strong> — session lookup and topology endpoint
+            <pre><code>java -jar jt808-platform/admin-api/target/admin-api-0.1.0-SNAPSHOT.jar \
+  --jt808.admin.redis-enabled=true</code></pre>
+            Listens on <span class="port">8090</span>. Test: <code>curl http://localhost:8090/actuator/health</code>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ── simulator start ── -->
+    <section id="simulator-start">
+      <h2>Start the Simulator</h2>
+      <pre><code>java \
+  -Xms512m -Xmx1g \
+  -XX:+UseG1GC \
+  -Dio.netty.allocator.type=pooled \
+  -Djt808.transport=nio \
+  -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar \
+  --config config/fleet.json</code></pre>
+
+      <p>The console dashboard refreshes every second. Key counters:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Counter</th><th>Meaning</th><th>Healthy value</th></tr></thead>
+          <tbody>
+            <tr><td>Active connections</td><td>Open TCP sockets to gateway-service</td><td>= <code>connectionCount</code></td></tr>
+            <tr><td>Authenticated sessions</td><td>Terminals that completed 0x0102 auth</td><td>= Active connections</td></tr>
+            <tr><td>Location reports sent</td><td>0x0200 messages sent</td><td>Climbing steadily</td></tr>
+            <tr><td>Invalid checksums</td><td>XOR mismatch on ACKs received</td><td><strong>Always 0</strong></td></tr>
+            <tr><td>Active media sessions</td><td>JT1078 TCP sessions open to RTVS</td><td>= <code>mediaCapableTerminalCount</code></td></tr>
+            <tr><td>Reconnect attempts</td><td>Connection drops &amp; retries</td><td>0 at steady state</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── verify ── -->
+    <section id="verify">
+      <h2>Verify the Stack is Working</h2>
+
+      <h3>1 — Session visible in Redis</h3>
+      <pre><code>redis-cli HGETALL jt808:session:00000000000000000001</code></pre>
+      Expected output includes <code>authenticated true</code>, <code>plateNumber TEST-0001</code>.
+
+      <h3>2 — GPS rows arriving in ClickHouse</h3>
+      <pre><code>curl -s "http://localhost:8123/?query=SELECT+count()+FROM+jt808.vehicle_gps"</code></pre>
+      Expected: a non-zero number that grows every few seconds.
+
+      <h3>3 — Alarm rows</h3>
+      <pre><code>curl -s "http://localhost:8123/?query=SELECT+count()+FROM+jt808.vehicle_alarm"</code></pre>
+
+      <h3>4 — Session API</h3>
+      <pre><code>curl -s http://localhost:8090/admin/sessions/00000000000000000001 | python3 -m json.tool</code></pre>
+      Expected: <code>"available": true</code> with all identity fields.
+
+      <h3>5 — Service health</h3>
+      <pre><code>for port in 8888 8090 8091; do
+  echo -n "port $port: "
+  curl -sf http://localhost:$port/actuator/health | grep -o '"status":"[A-Z]*"'
+done</code></pre>
+      Expected: <code>"status":"UP"</code> for each.
+    </section>
+
+    <!-- ── scenarios ── -->
+    <section id="scenarios">
+      <h2>Test Scenarios</h2>
+      <p>Run scenarios in order. Each builds on the previous. Wait for the stack to reach steady state (~60 s) before checking pass criteria.</p>
+    </section>
+
+    <!-- T-01 -->
+    <section id="t01">
+      <div class="scenario-card">
+        <div class="scenario-header">
+          <span class="scenario-id">T-01</span>
+          <span class="scenario-title">Connection &amp; Authentication</span>
+        </div>
+        <div class="scenario-body">
+          <p><strong>What it tests:</strong> Full JT808 lifecycle — register (0x0100), get response (0x8100), authenticate (0x0102), receive ack (0x8001).</p>
+          <p><strong>Wait:</strong> 30 s after simulator starts.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Check</th><th>Where</th><th>Expected</th></tr></thead>
+              <tbody>
+                <tr><td>Active connections</td><td>Simulator dashboard</td><td>= <code>connectionCount</code></td></tr>
+                <tr><td>Authenticated sessions</td><td>Simulator dashboard</td><td>= Active connections</td></tr>
+                <tr><td>Invalid checksums</td><td>Simulator dashboard</td><td><strong>0</strong></td></tr>
+                <tr><td>Session in Redis</td><td><code>redis-cli HGETALL jt808:session:…</code></td><td>Fields present including <code>authenticated true</code></td></tr>
+                <tr><td>Session lifecycle event</td><td>Kafka topic <code>telemetry.session</code></td><td>ONLINE and AUTHENTICATED messages</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p><span class="pass">PASS</span> when authenticated sessions = connectionCount with zero checksum errors.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- T-02 -->
+    <section id="t02">
+      <div class="scenario-card">
+        <div class="scenario-header">
+          <span class="scenario-id">T-02</span>
+          <span class="scenario-title">GPS Telemetry Pipeline</span>
+        </div>
+        <div class="scenario-body">
+          <p><strong>What it tests:</strong> Terminals send periodic 0x0200 location reports → gateway publishes to Kafka <code>telemetry.gps</code> → telemetry-service writes to ClickHouse <code>vehicle_gps</code>.</p>
+          <p><strong>Wait:</strong> 2 minutes after T-01 passes.</p>
+          <pre><code><span class="comment"># Row count should grow with each run</span>
+curl -s "http://localhost:8123/?query=SELECT+count()+FROM+jt808.vehicle_gps"
+
+<span class="comment"># Latest GPS rows</span>
+curl -s "http://localhost:8123/?query=SELECT+device_id,latitude,longitude,gps_time+FROM+jt808.vehicle_gps+ORDER+BY+gps_time+DESC+LIMIT+5+FORMAT+PrettyCompact"</code></pre>
+          <p><span class="pass">PASS</span> when row count climbs and coordinates change between rows.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- T-03 -->
+    <section id="t03">
+      <div class="scenario-card">
+        <div class="scenario-header">
+          <span class="scenario-id">T-03</span>
+          <span class="scenario-title">Alarm Ingestion</span>
+        </div>
+        <div class="scenario-body">
+          <p><strong>What it tests:</strong> Simulator triggers alarms via the AlarmEngine → gateway detects bit transitions in 0x0200 alarm word → publishes AlarmEvent to Kafka → alarm-service writes to <code>vehicle_alarm</code>.</p>
+          <p><strong>Trigger an alarm:</strong> The simulator's AlarmEngine fires simulated alarms periodically. Alternatively, observe naturally over 5 minutes (overspeed and fatigue alarms cycle automatically).</p>
+          <pre><code>curl -s "http://localhost:8123/?query=SELECT+device_id,alarm_type,alarm_name,cleared,gps_time+FROM+jt808.vehicle_alarm+ORDER+BY+gps_time+DESC+LIMIT+10+FORMAT+PrettyCompact"</code></pre>
+          <p>For video alarms, verify the extended columns:</p>
+          <pre><code>curl -s "http://localhost:8123/?query=SELECT+video_alarm,video_signal_lost_channels,fatigue_degree+FROM+jt808.vehicle_alarm+WHERE+video_alarm+>+0+LIMIT+5+FORMAT+PrettyCompact"</code></pre>
+          <p><span class="pass">PASS</span> when at least one alarm row exists with <code>cleared=0</code> and a matching <code>cleared=1</code> row confirming the lifecycle.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- T-04 -->
+    <section id="t04">
+      <div class="scenario-card">
+        <div class="scenario-header">
+          <span class="scenario-id">T-04</span>
+          <span class="scenario-title">JT1078 Media Streaming</span>
+        </div>
+        <div class="scenario-body">
+          <p><strong>What it tests:</strong> Media-capable terminals open a JT1078 TCP connection to RTVS and stream video+audio packets. Requires <code>mediaCapableTerminalCount ≥ 1</code> in fleet config.</p>
+          <p><strong>Wait:</strong> 60 s after T-01 passes.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Check</th><th>Where</th><th>Expected</th></tr></thead>
+              <tbody>
+                <tr><td>Active media sessions</td><td>Simulator dashboard</td><td>= <code>mediaCapableTerminalCount</code></td></tr>
+                <tr><td>Media packets sent</td><td>Simulator dashboard</td><td>Climbing steadily</td></tr>
+                <tr><td>Media connection failures</td><td>Simulator dashboard</td><td>0</td></tr>
+                <tr><td>RTVS sessions</td><td><code>curl http://SERVER:8089/api/sessions</code></td><td>Array with one entry per stream, <code>active: true</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <pre><code>ss -tan | grep :1078 | wc -l   <span class="comment"># should equal mediaCapableTerminalCount</span></code></pre>
+          <p><span class="pass">PASS</span> when all media sessions are active and RTVS confirms the streams.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- T-05 -->
+    <section id="t05">
+      <div class="scenario-card">
+        <div class="scenario-header">
+          <span class="scenario-id">T-05</span>
+          <span class="scenario-title">RTVS Gateway — Live Video Command</span>
+        </div>
+        <div class="scenario-body">
+          <p><strong>What it tests:</strong> RTVS calls <code>/VideoControl</code> → gateway sends 0x9101 to terminal → terminal opens JT1078 session → gateway writes <code>AVParameters</code> to Redis.</p>
+          <p><strong>Steps:</strong></p>
+          <ol>
+            <li>Confirm AVParameters key was written after terminal auth (from 0x1003 response):
+              <pre><code>redis-cli GET "AVParameters:00000000000000000001"</code></pre>
+              Expected: JSON with <code>VideoEncoding</code>, <code>MaxVideoChannels</code>, etc.
+            </li>
+            <li>Send a live-start command via the RTVS gateway API:
+              <pre><code>curl -G "http://localhost:8888/VideoControl" \
+  --data-urlencode "Content=&lt;JT808-hex-for-0x9101&gt;"</code></pre>
+              Expected response: <code>1</code> (accepted) or a command ID.
+            </li>
+            <li>Verify <code>OCX_ORDERINFO_&lt;commandId&gt;</code> appears in Redis:
+              <pre><code>redis-cli KEYS "OCX_ORDERINFO_*"</code></pre>
+            </li>
+          </ol>
+          <p><span class="pass">PASS</span> when command is accepted, AVParameters key exists, OCX_ORDERINFO key written.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- T-06 -->
+    <section id="t06">
+      <div class="scenario-card">
+        <div class="scenario-header">
+          <span class="scenario-id">T-06</span>
+          <span class="scenario-title">Reconnection After Network Interruption</span>
+        </div>
+        <div class="scenario-body">
+          <p><strong>What it tests:</strong> Simulator detects dropped connections, retries with exponential back-off, fully recovers when connectivity is restored. Session OFFLINE events are published to Kafka.</p>
+          <pre><code><span class="comment"># Block port 7611 for 60 s (run on server machine as root)</span>
+sudo iptables -A INPUT -p tcp --dport 7611 -j DROP
+sleep 60
+sudo iptables -D INPUT -p tcp --dport 7611 -j DROP</code></pre>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Phase</th><th>Counter</th><th>Expected</th></tr></thead>
+              <tbody>
+                <tr><td>During block</td><td>Active connections</td><td>Drops to 0</td></tr>
+                <tr><td>During block</td><td>Reconnect attempts</td><td>Climbing</td></tr>
+                <tr><td>After block lifted</td><td>Active connections</td><td>Recovers to <code>connectionCount</code> within 2 min</td></tr>
+                <tr><td>After block lifted</td><td>Invalid checksums</td><td>Still 0</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p><span class="pass">PASS</span> when full recovery within 2 minutes, zero checksum errors throughout.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- T-07 -->
+    <section id="t07">
+      <div class="scenario-card">
+        <div class="scenario-header">
+          <span class="scenario-id">T-07</span>
+          <span class="scenario-title">Scale — 100 Terminals, 10 Media Sessions</span>
+        </div>
+        <div class="scenario-body">
+          <p><strong>What it tests:</strong> Sustained load across 100 terminals with 10 simultaneous JT1078 streams.</p>
+          <p>Edit <code>config/fleet.json</code> before running:</p>
+          <pre><code>"connectionCount": 100,
+"connectStaggerMs": 10,
+"mediaCapableTerminalCount": 10</code></pre>
+          <pre><code>ulimit -n 200000
+
+java -Xms512m -Xmx2g \
+  -XX:+UseG1GC \
+  -Dio.netty.allocator.type=pooled \
+  -Djt808.transport=nio \
+  -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar \
+  --config config/fleet.json 2>&amp;1 | tee logs/scale-100.log</code></pre>
+          <p><strong>Wait 5 minutes at stable state, then check pass criteria:</strong></p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Metric</th><th>Pass threshold</th></tr></thead>
+              <tbody>
+                <tr><td>Authenticated sessions</td><td>≥ 95 of 100</td></tr>
+                <tr><td>Active media sessions</td><td>≥ 9 of 10</td></tr>
+                <tr><td>Invalid checksums</td><td><strong>0</strong></td></tr>
+                <tr><td>Reconnect attempts</td><td>Not climbing at steady state</td></tr>
+                <tr><td>Ack latency avg</td><td>&lt; 500 ms</td></tr>
+                <tr><td>ClickHouse GPS row rate</td><td>&gt; 100 rows / 5 s</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p><span class="pass">PASS</span> when all thresholds are met for ≥ 3 consecutive minutes.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── troubleshoot ── -->
+    <section id="troubleshoot">
+      <h2>Troubleshooting</h2>
+
+      <h3>Simulator connects but never authenticates</h3>
+      <ul>
+        <li>Check <code>jt808.gateway.auth-code</code> in gateway config matches the auth token the simulator expects.</li>
+        <li>Check gateway logs for decode errors on 0x0100 / 0x0102 messages.</li>
+        <li>Confirm gateway is running: <code>curl localhost:8888/actuator/health</code></li>
+      </ul>
+
+      <h3>Media sessions never appear</h3>
+      <ul>
+        <li>Verify <code>jt1078.host</code> in <code>fleet.json</code> points to the machine running RTVS (not <code>127.0.0.1</code> on a two-machine setup).</li>
+        <li>Check RTVS ingest port is open: <code>nc -zv SERVER_IP 1078</code></li>
+        <li>Confirm <code>mediaCapableTerminalCount ≥ 1</code> in fleet config.</li>
+      </ul>
+
+      <h3>ClickHouse tables empty</h3>
+      <ul>
+        <li>Confirm telemetry-service and alarm-service started with <code>kafka.enabled=true</code>.</li>
+        <li>Check Kafka topic has messages: <code>kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic telemetry.gps --max-messages 3</code></li>
+        <li>Check ClickHouse is up: <code>curl http://localhost:8123/ping</code> → should return <code>Ok.</code></li>
+      </ul>
+
+      <h3>Invalid checksum count &gt; 0</h3>
+      <div class="callout danger">
+        <span class="ico">✕</span>
+        <div class="callout-body"><p>Stop the test immediately. Capture a packet trace and file a bug report: <code>sudo tcpdump -i any -w /tmp/capture.pcap port 7611</code></p></div>
+      </div>
+
+      <h3>Port already in use</h3>
+      <pre><code>ss -tlnp | grep -E '7611|7612|1078|8888|8090'</code></pre>
+
+      <h3>Out of file descriptors (simulator or gateway)</h3>
+      <pre><code>ulimit -n 200000               <span class="comment"># raise limit in the shell running the process</span>
+cat /proc/$(pgrep java)/limits  <span class="comment"># check effective limit of running JVM</span></code></pre>
+
+      <h3>Redis session key missing</h3>
+      <ul>
+        <li>Confirm <code>redis.enabled=true</code> in gateway config.</li>
+        <li>Confirm Redis is running: <code>redis-cli ping</code> → <code>PONG</code></li>
+        <li>Keys are set after the terminal sends 0x0100 and 0x0102 — check the gateway log for those message IDs.</li>
+      </ul>
+    </section>
+
+    <!-- ── evidence ── -->
+    <section id="evidence">
+      <h2>Evidence Checklist</h2>
+      <p>Collect and archive the following for every formal test run:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Item</th><th>How to collect</th></tr></thead>
+          <tbody>
+            <tr><td>JVM version</td><td><code>java -version 2>&amp;1</code></td></tr>
+            <tr><td>Test run logs</td><td><code>2>&amp;1 | tee logs/T-XX-simulator.log</code></td></tr>
+            <tr><td>Simulator dashboard screenshot</td><td>Screenshot at stable state</td></tr>
+            <tr><td>GPS row count</td><td><code>SELECT count() FROM jt808.vehicle_gps</code></td></tr>
+            <tr><td>Alarm row count</td><td><code>SELECT count() FROM jt808.vehicle_alarm</code></td></tr>
+            <tr><td>Redis session dump</td><td><code>redis-cli HGETALL jt808:session:&lt;id&gt;</code></td></tr>
+            <tr><td>Service health summary</td><td><code>curl localhost:PORT/actuator/health</code> × 5</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Metrics to record per run</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td>Test ID</td><td></td></tr>
+            <tr><td>Date / time</td><td></td></tr>
+            <tr><td>connectionCount</td><td></td></tr>
+            <tr><td>mediaCapableTerminalCount</td><td></td></tr>
+            <tr><td>Authenticated sessions (stable)</td><td></td></tr>
+            <tr><td>Active media sessions (stable)</td><td></td></tr>
+            <tr><td>ClickHouse GPS rows after 5 min</td><td></td></tr>
+            <tr><td>Alarm rows present</td><td></td></tr>
+            <tr><td>Invalid checksums</td><td>Must be 0</td></tr>
+            <tr><td>Pass / Fail</td><td></td></tr>
+            <tr><td>Notes</td><td></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+  // Highlight active sidebar link on scroll
+  const sections = document.querySelectorAll('section[id]');
+  const links = document.querySelectorAll('.sidebar a[href^="#"]');
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        links.forEach(l => l.classList.remove('active'));
+        const active = document.querySelector('.sidebar a[href="#' + entry.target.id + '"]');
+        if (active) active.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-60px 0px -70% 0px', threshold: 0 });
+  sections.forEach(s => observer.observe(s));
+</script>
+</body>
+</html>
