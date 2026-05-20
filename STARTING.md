@@ -1,131 +1,112 @@
 # Starting the JT808 Stack
 
-Two separate apps: the **platform** (server) and the **simulator** (client).
-Start the platform first, then the simulator. The simulator will wait and retry if the platform isn't up yet.
+Three processes, three terminals. Start them in order.
 
----
-
-## 1. Build everything
-
-```bash
-# Build the simulator
-mvn clean package -q
-
-# Build the platform
-cd jt808-platform
-mvn clean package -q
-cd ..
+```
+simulator  ──── JT808 signaling ──►  jt808-server  :7611 / :7612
+           ──── JT1078 media    ──►  jt808-rtvs    :1078
 ```
 
 ---
 
-## 2. Start the platform (5 services)
+## 1. Build
 
-Open **five terminals** and run one service per terminal, in this order:
-
-**Terminal 1 — Gateway** (JT808 TCP listener on port 7611)
 ```bash
-java -jar jt808-platform/gateway-service/target/gateway-service-0.1.0-SNAPSHOT.jar
+cd ~/jt808-server  && mvn clean package -q
+cd ~/jt808-rtvs    && mvn clean package -q
+cd ~/jt808         && mvn clean package -q
 ```
-
-**Terminal 2 — Auth service**
-```bash
-java -jar jt808-platform/auth-service/target/auth-service-0.1.0-SNAPSHOT.jar
-```
-
-**Terminal 3 — Telemetry service**
-```bash
-java -jar jt808-platform/telemetry-service/target/telemetry-service-0.1.0-SNAPSHOT.jar
-```
-
-**Terminal 4 — Alarm service**
-```bash
-java -jar jt808-platform/alarm-service/target/alarm-service-0.1.0-SNAPSHOT.jar
-```
-
-**Terminal 5 — Admin API** (REST on port 8090)
-```bash
-java -jar jt808-platform/admin-api/target/admin-api-0.1.0-SNAPSHOT.jar
-```
-
-**Optional — Media service** (only needed for JT1078 video)
-```bash
-java -jar jt808-platform/media-service/target/media-service-0.1.0-SNAPSHOT.jar
-```
-
-Wait until you see `Started ...Application` in each terminal before moving on.
 
 ---
 
-## 3. Start the simulator
+## 2. Start jt808-server (JT808 signaling + RTVS command API)
 
-Pick the config that matches what you want to test:
+```bash
+java -jar ~/jt808-server/target/jt808-server-0.1.0-SNAPSHOT.jar \
+     --config ~/jt808-server/config/server.json
+```
+
+Ports bound:
+- `7611` — JT808 alarm/signaling (terminals connect here)
+- `7612` — JT808 file upload
+- `8888` — RTVS gateway API + web UI (`http://localhost:8888`)
+
+---
+
+## 3. Start jt808-rtvs (JT1078 media ingest + browser studio)
+
+```bash
+java -jar ~/jt808-rtvs/target/jt808-rtvs-0.1.0-SNAPSHOT.jar \
+     --config ~/jt808-rtvs/config/rtvs.json
+```
+
+Ports bound:
+- `1078` — JT1078 media ingest (simulator streams video here)
+- `8089` — RTVS browser studio (`http://localhost:8089`)
+
+---
+
+## 4. Start the simulator
+
+```bash
+cd ~/jt808
+java -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar --config config/fleet.json
+```
+
+The simulator connects to `127.0.0.1:7611` (server) and streams media to `127.0.0.1:1078` (rtvs).
+If the server isn't up yet it will retry automatically.
+
+Other config options:
 
 | Config | What it does |
 |--------|-------------|
 | `config/fleet.json` | 10 terminals, file-based media (default) |
 | `config/server.json` | 1 terminal, no media |
-| `config/camera-host.json` | 1 terminal, live webcam via ffmpeg |
-| `config/camera-smoke.json` | 1 terminal, synthetic camera (no real webcam needed) |
+| `config/camera-host.json` | 1 terminal, live webcam |
+| `config/camera-smoke.json` | 1 terminal, synthetic camera |
+
+---
+
+## 5. Verify
 
 ```bash
-java -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar --config config/fleet.json
-```
+# Connected terminals
+curl http://localhost:8888/api/terminals
 
-The simulator connects to `127.0.0.1:7611` (gateway). If the gateway isn't up yet it will retry automatically:
-```
-terminal 000...001 connecting to 127.0.0.1:7611
-terminal 000...001 connection to 127.0.0.1:7611 failed — Connection refused
-terminal 000...001 will retry in 1 s (attempt 1)
+# Active media sessions
+curl http://localhost:8888/api/media/sessions
+
+# RTVS studio health
+curl http://localhost:8089/api/health
+
+# Browser UIs
+# http://localhost:8888   — RTVS gateway UI (send commands to terminals)
+# http://localhost:8089   — RTVS studio (media session viewer)
 ```
 
 ---
 
-## 4. (Optional) Start the DMS sidecar
-
-Only needed when using `camera-host.json` with `dms.enabled: true`.
-Requires a webcam and the Python dependencies installed.
-
-```bash
-# Install dependencies (once)
-pip install -r dms-sidecar/requirements.txt
-
-# Start the sidecar (runs on port 7500)
-python3 dms-sidecar/dms_server.py
-```
-
-Start this **before** the simulator so the sidecar is ready when the simulator polls it.
-
----
-
-## Verify everything is connected
-
-```bash
-# Admin API health
-curl http://localhost:8090/actuator/health
-# → {"status":"UP"}
-
-# Service topology
-curl http://localhost:8090/admin/health/topology
-# → {"gateway":"external service","kafka":"event bus",...}
-
-# Look up a specific terminal session (requires Redis enabled)
-curl http://localhost:8090/admin/sessions/00000000000000000001
-```
-
----
-
-## Quick reference: ports
+## Port reference
 
 | Service | Port | Protocol |
 |---------|------|----------|
-| Gateway (JT808 signaling) | 7611 | TCP |
-| Gateway (file upload) | 7612 | TCP |
-| JT1078 media | 1078 | TCP |
-| Gateway (actuator) | 8080 | HTTP |
-| Telemetry service | 8082 | HTTP |
-| Alarm service | 8083 | HTTP |
-| Media service | 8084 | HTTP |
-| Admin API | 8090 | HTTP |
-| Auth service | 8091 | HTTP |
-| DMS sidecar | 7500 | HTTP |
+| JT808 signaling | 7611 | TCP |
+| JT808 file upload | 7612 | TCP |
+| JT1078 media ingest | 1078 | TCP |
+| RTVS gateway API + UI | 8888 | HTTP |
+| RTVS browser studio | 8089 | HTTP |
+
+---
+
+## (Optional) DMS sidecar
+
+Only needed with `config/camera-host.json` and `dms.enabled: true` in the config.
+
+```bash
+# Install once
+pip install -r ~/jt808/dms-sidecar/requirements.txt
+
+# Start before the simulator
+python3 ~/jt808/dms-sidecar/dms_server.py
+# → http://localhost:7500
+```
