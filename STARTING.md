@@ -117,6 +117,10 @@ curl -H "X-Api-Token: admin-token" http://localhost:8090/api/terminals
 | Gateway (JT808 signaling) | 7611 | TCP |
 | Gateway (file upload) | 7612 | TCP |
 | JT1078 media | 1078 | TCP |
+| Gateway (actuator) | 8080 | HTTP |
+| Telemetry service | 8082 | HTTP |
+| Alarm service | 8083 | HTTP |
+| Media service | 8084 | HTTP |
 | Admin API | 8090 | HTTP |
 | Auth service | 8091 | HTTP |
 | DMS sidecar | 7500 | HTTP |

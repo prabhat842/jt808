@@ -4,6 +4,9 @@ spring:
   main:
     web-application-type: reactive
 
+server:
+  port: 8083
+
 management:
   endpoints:
     web:
