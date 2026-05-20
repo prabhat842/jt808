@@ -113,7 +113,7 @@ class DmsDetector:
             frame = self._latest_bgr
         if frame is None:
             return None
-        ok, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        ok, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
         return buf.tobytes() if ok else None
 
     def set_seatbelt(self, worn: bool):
