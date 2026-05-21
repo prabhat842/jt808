@@ -27,8 +27,8 @@ class AnnexBAccessUnitParserTest {
 
         // SPS (type 7) split across two chunks
         byte[] part1 = new byte[]{0, 0, 0, 1, 0x67, 0x11, 0x22, 0, 0};
-        byte[] part2 = new byte[]{0, 1, 0x65, 0x33, 0x44,   // → 00 00 01 65 33 44 = IDR (type 5)
-                                   0, 0, 1, 0x41, 0x55};     // → 00 00 01 41 55    = P-frame (type 1)
+        byte[] part2 = new byte[]{0, 1, 0x65, (byte) 0x80, 0x44,   // → 00 00 01 65 ... = IDR, first slice
+                                   0, 0, 1, 0x41, (byte) 0x80};     // → 00 00 01 41 ... = P-frame, first slice
 
         List<byte[]> first = parser.append(part1, part1.length);
         assertEquals(0, first.size(), "SPS alone should not emit yet");
@@ -38,14 +38,14 @@ class AnnexBAccessUnitParserTest {
         assertEquals(1, second.size(), "SPS+IDR emitted as single access unit");
         assertArrayEquals(
             new byte[]{0, 0, 0, 1, 0x67, 0x11, 0x22,   // SPS
-                       0, 0, 0, 1, 0x65, 0x33, 0x44},   // IDR
+                       0, 0, 0, 1, 0x65, (byte) 0x80, 0x44},   // IDR
             second.get(0),
             "Access unit 1 must be SPS + IDR together");
 
         // P-frame is held until finish() or next coded slice
         List<byte[]> tail = parser.finish();
         assertEquals(1, tail.size());
-        assertArrayEquals(new byte[]{0, 0, 1, 0x41, 0x55}, tail.get(0),
+        assertArrayEquals(new byte[]{0, 0, 1, 0x41, (byte) 0x80}, tail.get(0),
             "P-frame flushed by finish()");
     }
 
@@ -55,19 +55,45 @@ class AnnexBAccessUnitParserTest {
 
         // Two P-frames back-to-back
         byte[] data = new byte[]{
-            0, 0, 0, 1, 0x41, 0x11,   // P1
-            0, 0, 0, 1, 0x41, 0x22,   // P2
-            0, 0, 0, 1, 0x41, 0x33    // P3
+            0, 0, 0, 1, 0x41, (byte) 0x80, 0x11,   // P1
+            0, 0, 0, 1, 0x41, (byte) 0x80, 0x22,   // P2
+            0, 0, 0, 1, 0x41, (byte) 0x80, 0x33    // P3
         };
         List<byte[]> emitted = parser.append(data, data.length);
         // P1 flushed by P2's arrival, P2 flushed by P3's arrival
         assertEquals(2, emitted.size());
-        assertArrayEquals(new byte[]{0, 0, 0, 1, 0x41, 0x11}, emitted.get(0));
-        assertArrayEquals(new byte[]{0, 0, 0, 1, 0x41, 0x22}, emitted.get(1));
+        assertArrayEquals(new byte[]{0, 0, 0, 1, 0x41, (byte) 0x80, 0x11}, emitted.get(0));
+        assertArrayEquals(new byte[]{0, 0, 0, 1, 0x41, (byte) 0x80, 0x22}, emitted.get(1));
 
         List<byte[]> tail = parser.finish();
         assertEquals(1, tail.size());
-        assertArrayEquals(new byte[]{0, 0, 0, 1, 0x41, 0x33}, tail.get(0));
+        assertArrayEquals(new byte[]{0, 0, 0, 1, 0x41, (byte) 0x80, 0x33}, tail.get(0));
+    }
+
+    @Test
+    void keepsMultipleSlicesOfSamePictureTogether() {
+        AnnexBAccessUnitParser parser = new AnnexBAccessUnitParser();
+
+        byte[] data = new byte[]{
+            0, 0, 0, 1, 0x67, 0x11,             // SPS
+            0, 0, 0, 1, 0x68, 0x22,             // PPS
+            0, 0, 0, 1, 0x65, (byte) 0x80, 1,   // IDR first slice: first_mb_in_slice = 0
+            0, 0, 0, 1, 0x65, 0x40, 2,          // IDR second slice: first_mb_in_slice = 1
+            0, 0, 0, 1, 0x41, (byte) 0x80, 3    // next P-frame first slice
+        };
+
+        List<byte[]> emitted = parser.append(data, data.length);
+        assertEquals(1, emitted.size());
+        assertArrayEquals(new byte[]{
+            0, 0, 0, 1, 0x67, 0x11,
+            0, 0, 0, 1, 0x68, 0x22,
+            0, 0, 0, 1, 0x65, (byte) 0x80, 1,
+            0, 0, 0, 1, 0x65, 0x40, 2
+        }, emitted.get(0));
+
+        List<byte[]> tail = parser.finish();
+        assertEquals(1, tail.size());
+        assertArrayEquals(new byte[]{0, 0, 0, 1, 0x41, (byte) 0x80, 3}, tail.get(0));
     }
 
     @Test
