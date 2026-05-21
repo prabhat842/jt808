@@ -50,11 +50,15 @@ Ports bound:
 
 ```bash
 cd ~/jt808
-java -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar --config config/fleet.json
+java -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar --config config/camera-host.json
 ```
 
 The simulator connects to `127.0.0.1:7611` (server) and streams media to `127.0.0.1:1078` (rtvs).
 If the server isn't up yet it will retry automatically.
+
+With `camera-host.json` the simulator **auto-launches the DMS sidecar** (`dms-sidecar/dms_server.py`)
+on startup — no separate step needed. The camera turns on immediately as a vehicle-side component,
+independent of whether jt808-server or rtvs is running.
 
 Other config options:
 
@@ -62,7 +66,7 @@ Other config options:
 |--------|-------------|
 | `config/fleet.json` | 10 terminals, file-based media (default) |
 | `config/server.json` | 1 terminal, no media |
-| `config/camera-host.json` | 1 terminal, live webcam |
+| `config/camera-host.json` | 1 terminal, live webcam + DMS auto-launch |
 | `config/camera-smoke.json` | 1 terminal, synthetic camera |
 
 ---
@@ -98,15 +102,11 @@ curl http://localhost:8089/api/health
 
 ---
 
-## (Optional) DMS sidecar
+## DMS sidecar (auto-managed)
 
-Only needed with `config/camera-host.json` and `dms.enabled: true` in the config.
+With `camera-host.json`, the simulator starts `dms-sidecar/dms_server.py` automatically.
+Install its dependencies once if not already done:
 
 ```bash
-# Install once
 pip install -r ~/jt808/dms-sidecar/requirements.txt
-
-# Start before the simulator
-python3 ~/jt808/dms-sidecar/dms_server.py
-# → http://localhost:7500
 ```
