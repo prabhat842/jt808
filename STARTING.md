@@ -83,6 +83,8 @@ java -jar target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar \
 
 - Auto-launches DMS sidecar (`dms-sidecar/dms_server.py`) — camera on immediately
 - Retries connecting to `127.0.0.1:7611` until the server is available
+- **Only one instance** — running two simulators with the same terminal ID
+  causes interleaved JT1078 streams and a blank video player
 
 ### Start infrastructure (can be started before or after simulator)
 
@@ -102,11 +104,30 @@ java -jar ~/jt808-rtvs/target/jt808-rtvs-0.1.0-SNAPSHOT.jar \
 curl http://localhost:8888/api/terminals       # connected terminals
 curl http://localhost:8888/api/media/sessions  # active media sessions
 curl http://localhost:8089/api/health          # RTVS studio health
+curl http://localhost:8089/api/sessions        # active JT1078 streams
 ```
 
-Browser UIs:
-- `http://localhost:8888` — RTVS gateway (send commands, start streams)
-- `http://localhost:8089` — RTVS studio (HLS player + DMS panel)
+---
+
+## Live video (RTVS Studio)
+
+Open **http://localhost:8089** in Chrome or Edge (WebCodecs required).
+
+The studio auto-connects to the first active session. To start a stream
+manually if the player shows "buffering":
+
+```bash
+curl "http://localhost:8888/api/live/start?terminal=00000000000000000001&channel=1"
+```
+
+The player badge shows:
+- `connecting…` — WebSocket opened, waiting for server
+- `buffering…` — subscribed, waiting for first I-frame
+- `live` — decoding and rendering H.264 frames
+- `error: …` — WebCodecs unavailable or decode failure (check browser console)
+
+H.264 debug captures are written to `/tmp/rtvs-capture/` automatically.
+Replay with: `ffplay /tmp/rtvs-capture/000000000001-ch1.h264`
 
 ---
 
@@ -130,5 +151,5 @@ Browser UIs:
 | JT808 file upload | 7612 | TCP |
 | RTVS gateway API + UI | 8888 | HTTP |
 | JT1078 media ingest | 1078 | TCP |
-| RTVS browser studio | 8089 | HTTP |
+| RTVS browser studio | 8089 | HTTP + WebSocket (/ws) |
 | DMS sidecar | 7500 | HTTP |
