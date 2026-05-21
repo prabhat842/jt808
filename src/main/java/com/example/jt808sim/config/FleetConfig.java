@@ -433,6 +433,7 @@ public class FleetConfig {
         private boolean enabled        = false;
         private String  sidecarUrl     = "http://127.0.0.1:7500";
         private long    pollIntervalMs = 500;
+        private String  sidecarScript  = null; // auto-launch path, e.g. "dms-sidecar/dms_server.py"
 
         public boolean isEnabled()          { return enabled; }
         public void    setEnabled(boolean enabled)         { this.enabled = enabled; }
@@ -440,5 +441,7 @@ public class FleetConfig {
         public void    setSidecarUrl(String sidecarUrl)    { this.sidecarUrl = sidecarUrl; }
         public long    getPollIntervalMs()  { return pollIntervalMs; }
         public void    setPollIntervalMs(long pollIntervalMs) { this.pollIntervalMs = pollIntervalMs; }
+        public String  getSidecarScript()   { return sidecarScript; }
+        public void    setSidecarScript(String sidecarScript) { this.sidecarScript = sidecarScript; }
     }
 }

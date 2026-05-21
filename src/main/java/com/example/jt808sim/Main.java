@@ -1,6 +1,7 @@
 package com.example.jt808sim;
 
 import com.example.jt808sim.config.FleetConfig;
+import com.example.jt808sim.dms.DmsSidecarLauncher;
 import com.example.jt808sim.fleet.FleetManager;
 import com.example.jt808sim.monitoring.ConsoleDashboard;
 import com.example.jt808sim.monitoring.MetricsRegistry;
@@ -21,15 +22,35 @@ public class Main {
         FleetManager fleetManager = new FleetManager(config, metrics);
         ConsoleDashboard dashboard = new ConsoleDashboard(metrics);
 
+        // Auto-launch DMS sidecar if configured — camera is a vehicle component,
+        // it runs independently of jt808-server and rtvs
+        DmsSidecarLauncher dmsSidecar = buildDmsSidecar(config);
+
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             dashboard.close();
             fleetManager.close();
+            if (dmsSidecar != null) dmsSidecar.close();
         }, "shutdown"));
 
         log.info("starting simulator with config {}", configPath);
+
+        if (dmsSidecar != null) {
+            dmsSidecar.start();
+            // give the sidecar a moment to open the camera before FFmpeg tries to read it
+            Thread.sleep(2000);
+        }
+
         dashboard.start();
         fleetManager.start();
         new CountDownLatch(1).await();
+    }
+
+    private static DmsSidecarLauncher buildDmsSidecar(FleetConfig config) {
+        FleetConfig.DmsConfig dms = config.getDms();
+        if (!dms.isEnabled() || dms.getSidecarScript() == null || dms.getSidecarScript().isBlank()) {
+            return null;
+        }
+        return new DmsSidecarLauncher(dms.getSidecarScript());
     }
 
     private static Path parseConfigPath(String[] args) {

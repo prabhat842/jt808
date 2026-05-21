@@ -44,7 +44,8 @@
   "dms": {
     "enabled": true,
     "sidecarUrl": "http://127.0.0.1:7500",
-    "pollIntervalMs": 500
+    "pollIntervalMs": 500,
+    "sidecarScript": "dms-sidecar/dms_server.py"
   },
   "vehicles": [
     {
